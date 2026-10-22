@@ -11,6 +11,7 @@ def app_ui(client, monkeypatch):
         agent,
         categories,
         chat_navigation,
+        connection_test,
         detail,
         importer,
         library,
@@ -30,6 +31,7 @@ def app_ui(client, monkeypatch):
     for module in (
         agent,
         categories,
+        connection_test,
         chat_navigation,
         detail,
         importer,
@@ -141,16 +143,18 @@ def test_settings_create_connection_and_agent_selects_it(settings, monkeypatch):
         next(t for t in app.text_input if t.label == "服务端密钥环境变量名").input(
             "RESEARCH_MODEL_KEY_TEST_UI_UNSET"
         )
-        next(b for b in app.button if b.label == "保存服务商").click().run()
+        next(b for b in app.button if b.label == "测试并保存服务商").click().run()
+        assert app.error and len(client.get("/connections").json()["items"]) == 1
+        next(b for b in app.button if b.label == "保存为停用（不测试）").click().run()
         assert not app.exception
         connection = client.get("/connections").json()["items"][-1]
         assert connection["name"] == "Other Gateway" and not connection["configured"]
         nav(app, "Agent 平台")
-        next(s for s in app.selectbox if s.label == "模型").set_value(
+        assert not connection["enabled"]
+        assert (
             connection["id"] + "::other-model"
-        ).run()
-        chat_scope(app)
-        assert not app.exception and app.chat_input[0].disabled
+            not in next(s for s in app.selectbox if s.label == "模型").options
+        )
         assert not provider.calls
 
 

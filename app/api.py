@@ -28,10 +28,12 @@ from app.retrieval.indexing import IndexService
 from app.retrieval.reranking import Reranker
 from app.routes.agent import router as agent_router
 from app.routes.categories import router as category_router
+from app.routes.connection_tests import router as connection_test_router
 from app.routes.papers import router
 from app.routes.projects import router as project_router
 from app.routes.qa import router as qa_router
 from app.services.agent_answer import AgentAnswerService
+from app.services.connection_test import ConnectionTester
 from app.services.conversations import ConversationService
 from app.services.ingestion import IngestionService, Parser
 from app.services.query_adapter import QueryAdapter
@@ -54,7 +56,7 @@ def create_app(
         application.state.conversations.repository.recover_interrupted()
         yield
 
-    application = FastAPI(title="Research Paper RAG", version="0.9.1", lifespan=lifespan)
+    application = FastAPI(title="Research Paper RAG", version="0.10.0", lifespan=lifespan)
     application.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
@@ -72,6 +74,7 @@ def create_app(
     application.state.registry = ModelRegistry(
         settings, application.state.connections, application.state.provider
     )
+    application.state.connection_tester = ConnectionTester(application.state.registry)
     application.state.agent_answers = AgentAnswerService(
         application.state.indexing,
         application.state.registry,
@@ -143,8 +146,8 @@ def create_app(
     def health() -> dict:
         return {
             "status": "ok",
-            "version": "0.9.1",
-            "slice": "S3.5.1",
+            "version": "0.10.0",
+            "slice": "S3.6",
             "parser": "docling",
             "rag_enabled": True,
             "model_configured": application.state.provider.configured,
@@ -156,6 +159,7 @@ def create_app(
     application.include_router(category_router)
     application.include_router(qa_router)
     application.include_router(agent_router)
+    application.include_router(connection_test_router)
     application.include_router(project_router)
     return application
 

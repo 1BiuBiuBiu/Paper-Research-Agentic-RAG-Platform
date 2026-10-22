@@ -2,11 +2,16 @@ from typing import Any
 
 import streamlit as st
 
-from app.ui_components.client import api
+from app.ui_components.client import ClientError, api
+from app.ui_components.connection_test import existing_connection_test, show_report
 
 
 def settings_page() -> None:
     st.subheader("模型管理")
+    if notice := st.session_state.pop("settings:notice", None):
+        st.success(notice)
+    if report := st.session_state.pop("settings:test-report", None):
+        show_report(report)
     catalog = api("GET", "/model-catalog")
     connections = api("GET", "/connections")["items"]
     models_tab, providers_tab = st.tabs(["模型", "服务商"])
@@ -20,7 +25,7 @@ def settings_page() -> None:
                     "服务商": model["provider_name"],
                     "状态": "已停用"
                     if not model["enabled"]
-                    else ("已配置" if model["configured"] else "待配置密钥"),
+                    else ("凭据已配置" if model["configured"] else "待配置密钥"),
                 }
             )
         st.dataframe(rows, hide_index=True, width="stretch")
@@ -47,9 +52,10 @@ def settings_page() -> None:
                         json={"connection_id": model["connection_id"], "model": model["model"]},
                     )
                     st.success("默认模型已保存，新对话会使用此选择。")
-        st.caption("已配置表示本机凭据齐全；保存和切换模型不会自动发起付费请求。")
+        st.caption("凭据已配置不代表连接测试通过；请在服务商页面显式测试。切换模型不会发起请求。")
     with providers_tab:
         credential_dialog(connections)
+        existing_connection_test(connections)
         provider_editor(connections)
     with st.expander("本机运行状态"):
         state = api("GET", "/health")
@@ -80,7 +86,7 @@ def credential_dialog(connections: list[dict]) -> None:
 def provider_editor(connections: list[dict]) -> None:
     st.caption("服务商配置一次，模型出现在对话统一列表中。当前支持 Chat Completions 兼容 API。")
     for connection in connections:
-        state = "已配置" if connection["configured"] else "待配置密钥"
+        state = "凭据已配置" if connection["configured"] else "待配置密钥"
         st.text(
             connection["name"] + " · " + state + (" · 已停用" if not connection["enabled"] else "")
         )
@@ -107,7 +113,13 @@ def provider_editor(connections: list[dict]) -> None:
             st.caption(
                 "密钥仅保存在本机服务端 .env，页面只引用变量名。内置服务使用 DEEPSEEK_API_KEY。"
             )
-        if st.form_submit_button("保存服务商", type="primary"):
+        st.caption(
+            "测试每个所填模型一次短请求，可能计费；全部通过才保存。首次可先保存为停用，再配置密钥。"
+        )
+        test_only = st.form_submit_button("测试当前配置")
+        save = st.form_submit_button("测试并保存服务商", type="primary")
+        disabled_save = st.form_submit_button("保存为停用（不测试）")
+        if test_only or save or disabled_save:
             body = {
                 "name": name,
                 "base_url": endpoint,
@@ -117,9 +129,31 @@ def provider_editor(connections: list[dict]) -> None:
                 "json_mode": json_mode,
                 "enabled": enabled,
             }
-            api(
-                "POST" if selected == "new" else "PUT",
-                "/connections" if selected == "new" else f"/connections/{selected}",
-                json=body,
-            )
-            st.rerun()
+            try:
+                if disabled_save:
+                    api(
+                        "POST" if selected == "new" else "PUT",
+                        "/connections" if selected == "new" else f"/connections/{selected}",
+                        json={**body, "enabled": False},
+                    )
+                    st.session_state["settings:notice"] = "已保存为停用，请配置密钥后测试并启用。"
+                    st.rerun()
+                else:
+                    with st.spinner("正在验证模型接口…"):
+                        result = api(
+                            "POST",
+                            "/connection-tests/save" if save else "/connection-tests/draft",
+                            json={
+                                "connection": body,
+                                "identifier": None if selected == "new" else selected,
+                            },
+                            timeout=450,
+                        )
+                    if save:
+                        st.session_state["settings:test-report"] = result["test"]
+                        st.session_state["settings:notice"] = "服务商已通过测试并保存。"
+                        st.rerun()
+                    else:
+                        show_report(result)
+            except ClientError as error:
+                st.error(str(error))
