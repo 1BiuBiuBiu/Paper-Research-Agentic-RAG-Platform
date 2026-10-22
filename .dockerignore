@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.env.*
+data
+models
+output
+tmp
+references/upstream
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache

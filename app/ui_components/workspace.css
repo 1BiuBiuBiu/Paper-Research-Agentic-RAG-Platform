@@ -1,0 +1,139 @@
+/* Bounded workspaces: controls stay outside independently scrolling content. */
+[data-testid="stMainBlockContainer"]:has(.st-key-library-workspace, .st-key-agent-workspace) {
+    padding:12px 20px; max-width:none; height:100dvh; overflow:hidden;
+}
+[data-testid="stMainBlockContainer"]:has(.st-key-library-workspace, .st-key-agent-workspace) > [data-testid="stVerticalBlock"] {
+    height:100%; min-height:0;
+}
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:has(> :is(.st-key-library-workspace, .st-key-agent-workspace)) {
+    height:100%; min-height:0;
+}
+.st-key-library-workspace, .st-key-agent-workspace {
+    height:calc(100dvh - 24px) !important; min-height:0; overflow:hidden;
+    gap:8px !important;
+}
+:is(.st-key-library-workspace, .st-key-agent-workspace) > * {flex-shrink:0;}
+/* st.container and st.columns each have a public layout wrapper. */
+:is(.st-key-library-workspace, .st-key-paper-detail) > [data-testid="stLayoutWrapper"]:has(> :is(.st-key-paper-detail, .st-key-reader-content, .st-key-detail-scroll, .st-key-library-list)),
+.st-key-agent-workspace > [data-testid="stLayoutWrapper"]:has(> .st-key-agent-body) {
+    flex:1 1 0; min-height:0; overflow:hidden;
+}
+.st-key-paper-detail, .st-key-reader-content, .st-key-agent-body, .st-key-agent-main {
+    height:100% !important; min-height:0; overflow:hidden;
+}
+.st-key-paper-detail {gap:8px !important;}
+.st-key-paper-detail > * {flex-shrink:0;}
+.st-key-paper-detail h3 {font-size:15px !important; padding:0; line-height:1.4;}
+.st-key-paper-detail [data-testid="stCaptionContainer"] p {margin:0; font-size:12px;}
+.st-key-paper-detail [data-testid="stCaptionContainer"],
+.st-key-agent-workspace [data-testid="stCaptionContainer"] {margin-bottom:0;}
+.st-key-paper-detail [role="radiogroup"] {gap:4px 14px;}
+.st-key-paper-detail [role="radiogroup"] p {font-size:13px;}
+.st-key-library-reader-nav button {min-height:30px; padding:3px 10px; font-size:13px;}
+.st-key-reader-content > [data-testid="stLayoutWrapper"],
+.st-key-agent-body > [data-testid="stLayoutWrapper"] {
+    height:100%; min-height:0;
+}
+:is(.st-key-reader-content, .st-key-agent-body) > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {
+    height:100%; min-height:0; flex-wrap:nowrap;
+}
+:is(.st-key-reader-content, .st-key-agent-body) [data-testid="stColumn"] {min-height:0;}
+.st-key-reader-content [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {
+    height:100%; min-height:0; gap:4px;
+}
+.st-key-reader-content [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"] {
+    flex-shrink:0;
+}
+.st-key-reader-content [data-testid="stLayoutWrapper"]:has(> :is([class*="st-key-source-preview-"], [class*="st-key-parsed-preview-"])) {
+    flex:1 1 0; min-height:0; overflow:hidden;
+}
+[class*="st-key-source-preview-"], [class*="st-key-parsed-preview-"], .st-key-detail-scroll, .st-key-library-list {
+    height:100% !important; min-height:0; overscroll-behavior:contain;
+}
+/* The source page fits its actual pane, without an extra frame or scrollbars. */
+[class*="st-key-source-preview-"] {padding:0; overflow:hidden !important;}
+[class*="st-key-source-preview-"] > [data-testid="stElementContainer"],
+[class*="st-key-source-preview-"] [data-testid="stFullScreenFrame"],
+[class*="st-key-source-preview-"] [data-testid="stFullScreenFrame"] > div,
+[class*="st-key-source-preview-"] [data-testid="stImage"],
+[class*="st-key-source-preview-"] [data-testid="stImageContainer"] {
+    width:100% !important; height:100% !important; min-height:0;
+}
+[class*="st-key-source-preview-"] img {
+    width:100% !important; height:100% !important;
+    max-width:100%; max-height:100%; object-fit:contain; object-position:top center;
+}
+[class*="st-key-parsed-preview-"] {overflow-y:auto !important;}
+.paper-reading {font-size:14px; line-height:1.8; color:#263449; overflow-wrap:anywhere;}
+.paper-reading .paper-title {font-size:19px !important; line-height:1.5; margin:0 0 16px;}
+.paper-reading .paper-heading {
+    border-top:1px solid #dce3ec; margin:22px 0 10px; padding:12px 0 0;
+    color:#17263d; line-height:1.5;
+}
+.paper-reading h2.paper-heading {font-size:18px !important;}
+.paper-reading h3.paper-heading {font-size:16px !important;}
+.paper-reading :is(h4,h5).paper-heading {font-size:15px !important;}
+.paper-reading .paper-paragraph {margin:0 0 12px; white-space:pre-wrap;}
+.paper-reading .paper-caption {font-size:12px; color:#627087; margin:10px 0;}
+.paper-reading .paper-list-item {padding-left:14px; border-left:2px solid #dce3ec;}
+.paper-reading .paper-formula {font-family:serif; white-space:pre-wrap; text-align:center;}
+.st-key-reader-pagination {padding-top:6px; border-top:1px solid #e4e8ee; gap:10px !important;}
+.st-key-reader-pagination button {min-height:32px; font-size:13px;}
+.st-key-reader-pagination [data-testid="stCaptionContainer"] {white-space:nowrap;}
+.literature-list thead {position:sticky; top:0; z-index:1;}
+.st-key-library-list {border:1px solid #e0e4ea; border-radius:6px;}
+.st-key-library-list .literature-list td {padding:12px 9px;}
+.st-key-agent-workspace h3 {font-size:18px !important; padding:0;}
+.st-key-agent-workspace [data-testid="stCaptionContainer"] p {margin:0;}
+.st-key-agent-body > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
+.st-key-agent-body > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] {
+    height:100% !important; min-height:0; flex:1 1 0;
+}
+.st-key-agent-main {max-width:1000px; margin:auto; gap:10px !important;}
+.st-key-agent-main > [data-testid="stLayoutWrapper"]:has(> .st-key-agent-transcript) {
+    flex:1 1 0; min-height:0; overflow:hidden;
+}
+.st-key-agent-transcript {height:100% !important; min-height:0; overscroll-behavior:contain;}
+.st-key-agent-transcript [data-testid="stChatMessage"] {padding:14px; border-radius:12px;}
+.st-key-agent-transcript [data-testid="stText"] {font-size:14px; line-height:1.75;}
+.st-key-agent-composer {
+    background:#f8f9fb; border:1px solid #dce1e8; border-radius:16px;
+    padding:10px 14px; flex-shrink:0;
+}
+.st-key-agent-composer [data-testid="stVerticalBlock"] {gap:5px;}
+.st-key-agent-composer > * {flex-shrink:0;}
+.st-key-agent-composer [data-testid="stChatInput"] {border-radius:12px;}
+.st-key-agent-empty {padding:12vh 12px 20px; text-align:center;}
+.st-key-agent-empty h3, .st-key-agent-empty p {text-align:center;}
+.st-key-conversation-outline {
+    height:100% !important; min-height:0; border-left:1px solid #e4e8ee; padding-left:14px;
+}
+.conversation-outline {display:flex; flex-direction:column; gap:6px;}
+.conversation-outline a {display:block; padding:8px; border-radius:6px; color:#566479;
+    text-decoration:none; font-size:12px; overflow-wrap:anywhere;}
+.conversation-outline a:hover, .conversation-outline a:focus-visible {background:#eef3fb; color:#356ac3;}
+.conversation-outline span {display:block; color:#8a95a5; font-size:11px;}
+.conversation-outline strong {display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+    overflow:hidden; font-weight:400; line-height:1.6;}
+.turn-anchor {scroll-margin-top:8px;}
+[data-testid="stElementContainer"]:has(> [data-testid="stHtml"] > :is(.turn-anchor, #conversation-start, #conversation-end)) {
+    height:0; min-height:0;
+}
+/* Short/narrow windows retain access to all controls through pane scrolling. */
+@media (max-height:600px) {
+    .st-key-agent-composer {max-height:45dvh; overflow-y:auto;}
+    .st-key-paper-detail h3 {font-size:13px !important;}
+}
+@media (max-width:1000px) {
+    [data-testid="stSidebar"] {width:180px !important; min-width:180px !important; max-width:180px !important;}
+    [data-testid="stMainBlockContainer"]:has(.st-key-library-workspace, .st-key-agent-workspace) {padding:12px 10px;}
+    .st-key-agent-body > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {min-width:130px;}
+    .st-key-reader-pagination {gap:4px !important; flex-wrap:wrap;}
+}
+/* Streamlit overlays its sidebar on small windows; our persistent sidebar needs space. */
+@media (max-width:768px) {
+    [data-testid="stMain"] {
+        margin-left:180px; width:calc(100% - 180px);
+    }
+    .st-key-reader-pagination {gap:3px !important;}
+}

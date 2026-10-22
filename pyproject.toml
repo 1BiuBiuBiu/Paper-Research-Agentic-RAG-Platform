@@ -1,0 +1,56 @@
+[project]
+name = "research-agentic-rag-platform"
+version = "0.9.1"
+description = "Local-first research paper management and evidence-grounded RAG"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "docling==2.140.0",
+  "fastapi==0.153.0",
+  "httpx==0.28.1",
+  "pydantic==2.14.1",
+  "pypdf==6.21.1",
+  "pypdfium2==5.14.0",
+  "python-multipart==0.0.32",
+  "streamlit==1.66.0",
+  "uvicorn==0.54.0",
+  "sentence-transformers==6.1.0",
+  "faiss-cpu==1.15.1",
+  "rank-bm25==0.2.2",
+  "python-dotenv==1.2.4",
+  "langgraph==0.4.1",
+]
+
+[dependency-groups]
+dev = ["mypy==2.4.0", "pytest==9.1.1", "reportlab==5.0.1", "ruff==0.17.1"]
+
+[tool.uv]
+environments = ["sys_platform == 'win32'"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+include = ["app/**/*.py", "tests/**/*.py", "scripts/**/*.py"]
+exclude = ["app/agent.py", "app/rag_qa.py", "app/ui.py", "references"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app/core", "app/domain", "app/parsing", "app/metadata", "app/repositories", "app/services", "app/routes", "app/ui_components", "app/retrieval", "app/providers", "app/api.py", "app/main.py"]
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["pypdfium2.*", "reportlab.*", "faiss.*", "rank_bm25.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["docling.*", "docling_core.*", "streamlit.*", "sentence_transformers.*"]
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["docling: real model-backed parser (explicit opt-in)", "embedding: real local BGE-M3 inference (explicit opt-in)"]
