@@ -22,7 +22,13 @@ class Settings:
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     reranker_revision: str = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
     reranker_timeout: int = 120
+    # Per-paper recall depth is an internal candidate budget, not a delivered quota.
+    per_paper_candidates: int = 20
+    # Upper bound for the fused library-level pool that reaches the reranker.
+    candidates: int = 60
+    rerank_top_n: int = 10
     agent_timeout: int = 600
+    agent_max_calls: int = 7
     tavily_api_key: str = field(default="", repr=False)
 
     @classmethod
@@ -47,5 +53,9 @@ class Settings:
                 "RESEARCH_EMBEDDING_REVISION", "5617a9f61b028005a4858fdac845db406aefb181"
             ),
             index_timeout=int(value("RESEARCH_INDEX_TIMEOUT", "600")),
+            per_paper_candidates=int(value("RESEARCH_PER_PAPER_CANDIDATES", "20")),
+            candidates=int(value("RESEARCH_CANDIDATES", "60")),
+            rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "10")),
+            agent_max_calls=int(value("RESEARCH_AGENT_MAX_CALLS", "7")),
             tavily_api_key=value("TAVILY_API_KEY"),
         )

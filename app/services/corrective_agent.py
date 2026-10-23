@@ -1,6 +1,7 @@
 """Upstream Corrective RAG graph, with explicit scope and bounded external calls."""
 
 import json
+import re
 import time
 from collections.abc import Callable
 from typing import Any, TypedDict
@@ -16,9 +17,37 @@ from app.providers.web_search import WebSearch
 from app.retrieval.reranking import Reranker
 from app.services.agent_messages import budget_evidence, context, messages, validate_citations
 
+CJK = re.compile(r"[\u4e00-\u9fff]")
+NUMBER = re.compile(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?(?![A-Za-z0-9])")
+
+TRANSLATE_PROMPT = (
+    "[stage:translate] 把用户问题翻译成英文检索式，供英文交叉编码器精排使用。"
+    "逐字保留所有数字、单位、符号（±、η、α、β 等）、表号/图号（Table 7、Figure 5(c)）、"
+    "数据集与模型名；不要解释、不要扩写、不要回答问题、不要改变数值。"
+    '仅输出 JSON：{"answer":"English search query","citations":[],"insufficient_evidence":false}。'
+)
+
+
+def needs_translation(question: str) -> bool:
+    return bool(CJK.search(question))
+
+
+def translation_rejected(source: str, translated: str) -> str:
+    """Return a fallback reason when the translation cannot be trusted, else empty string."""
+    text = translated.strip()
+    if not text or len(text) > 2000 or any(ord(char) < 32 for char in text):
+        return "invalid_translation"
+    ascii_share = sum(char.isascii() for char in text) / len(text)
+    if ascii_share < 0.6:
+        return "not_english"
+    if any(number not in text for number in NUMBER.findall(source)):
+        return "numbers_lost"
+    return ""
+
 
 class State(TypedDict):
     query: str
+    search_query_en: str
     rewrite_count: int
     candidates: list[Evidence]
     accepted: list[Evidence]
@@ -41,9 +70,12 @@ class CorrectiveAgent:
         model: str,
         budget: int,
         timeout: int = 600,
+        top_n: int = 5,
+        max_calls: int = 7,
     ) -> None:
         self.provider, self.reranker, self.web = provider, reranker, web
         self.model, self.budget = model, budget
+        self.top_n, self.max_calls = top_n, max_calls
         self.started = time.monotonic()
         self.deadline = self.started + timeout
         self.calls = 0
@@ -56,8 +88,8 @@ class CorrectiveAgent:
 
     def call(self, prompt: str, payload: dict) -> Completion:
         self.check()
-        if self.calls >= 6:
-            raise AppError("agent_call_limit", "本轮模型调用已达 6 次上限。", 429)
+        if self.calls >= self.max_calls:
+            raise AppError("agent_call_limit", f"本轮模型调用已达 {self.max_calls} 次上限。", 429)
         self.calls += 1
         completion = self.provider.complete(
             self.model,
@@ -95,7 +127,7 @@ class CorrectiveAgent:
                     node=node,
                     attempt=state["rewrite_count"],
                     query=state["query"]
-                    if node in {"retrieve", "rewrite_query", "web_search"}
+                    if node in {"retrieve", "rewrite_query", "web_search", "translate_query"}
                     else "",
                     count=count,
                     reason=reason,
@@ -126,6 +158,31 @@ class CorrectiveAgent:
                 s, "route_query", reason="explicit_chat" if chat else "explicit_paper_scope"
             )
 
+        def translate(s: State) -> dict:
+            guard()
+            # English questions need no extra call; Chinese questions get one cached translation
+            # used only for reranking, so retrieval keeps the user's original wording.
+            if not needs_translation(question):
+                return {"search_query_en": question}
+            try:
+                answer = self.call(TRANSLATE_PROMPT, {"question": question}).result
+            except AppError:
+                return {
+                    **self.event(s, "translate_query", reason="fallback_call_failed"),
+                    "search_query_en": s["query"],
+                }
+            reason = translation_rejected(question, answer.answer)
+            if reason or answer.citations or answer.insufficient_evidence:
+                return {
+                    **self.event(s, "translate_query", reason=reason or "invalid_translation"),
+                    "search_query_en": s["query"],
+                }
+            english = answer.answer.strip()
+            return {
+                **self.event(s, "translate_query", reason=f"translated: {english[:160]}"),
+                "search_query_en": english,
+            }
+
         def retrieve(s: State) -> dict:
             guard()
             found = search(s["query"])
@@ -133,9 +190,13 @@ class CorrectiveAgent:
 
         def rerank(s: State) -> dict:
             guard()
-            ranked = self.reranker.rank(s["query"], s["candidates"], 5)
+            ranked = self.reranker.rank(
+                s["search_query_en"] or s["query"], s["candidates"], self.top_n
+            )
             allowed = {(e.document_id, e.id): e for e in s["candidates"]}
-            if len(ranked) > 5 or any((e.document_id, e.id) not in allowed for e in ranked):
+            if len(ranked) > self.top_n or any(
+                (e.document_id, e.id) not in allowed for e in ranked
+            ):
                 raise AppError("invalid_reranker_output", "精排返回了候选范围外的证据。", 503)
             ranked = [
                 allowed[(e.document_id, e.id)].model_copy(update={"rerank_score": e.rerank_score})
@@ -224,8 +285,10 @@ class CorrectiveAgent:
                     "accepted": [],
                     "web": [],
                 }
-            if self.calls >= 6:
-                raise AppError("agent_call_limit", "本轮模型调用已达上限。", 429)
+            if self.calls >= self.max_calls:
+                raise AppError(
+                    "agent_call_limit", f"本轮模型调用已达 {self.max_calls} 次上限。", 429
+                )
             self.calls += 1
             completion = self.provider.complete(
                 self.model, messages(question, packed, history, chat)
@@ -248,6 +311,7 @@ class CorrectiveAgent:
         graph = StateGraph(State)
         for name, fn in [
             ("route_query", route),
+            ("translate_query", translate),
             ("retrieve", retrieve),
             ("rerank", rerank),
             ("grade_documents", grade),
@@ -257,7 +321,10 @@ class CorrectiveAgent:
         ]:
             graph.add_node(name, fn)
         graph.set_entry_point("route_query")
-        graph.add_conditional_edges("route_query", lambda s: "generate" if chat else "retrieve")
+        graph.add_conditional_edges(
+            "route_query", lambda s: "generate" if chat else "translate_query"
+        )
+        graph.add_edge("translate_query", "retrieve")
         graph.add_edge("retrieve", "rerank")
         graph.add_edge("rerank", "grade_documents")
         graph.add_conditional_edges(
@@ -277,6 +344,7 @@ class CorrectiveAgent:
         graph.add_edge("generate", END)
         initial: State = {
             "query": retrieval_query,
+            "search_query_en": "",
             "rewrite_count": 0,
             "candidates": [],
             "accepted": [],

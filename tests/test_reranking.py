@@ -63,3 +63,15 @@ def test_missing_model_and_timeout_fail_without_silent_fallback(settings, monkey
     with pytest.raises(AppError, match="超时"):
         ranker.rank("q", evidence())
     assert not ranker.lock.locked()
+
+
+def test_rerank_candidate_limit_comes_from_settings(settings, monkeypatch):
+    ranker = CrossEncoderReranker(settings)
+    monkeypatch.setattr(ranker, "ready", lambda: True)
+    oversized = [
+        item.model_copy(update={"id": str(index), "source_id": f"E{index}"})
+        for index, item in enumerate(evidence() * 31)
+    ]
+    assert len(oversized) > settings.candidates
+    with pytest.raises(AppError, match=f"超过 {settings.candidates} 条上限"):
+        ranker.rank("q", oversized)

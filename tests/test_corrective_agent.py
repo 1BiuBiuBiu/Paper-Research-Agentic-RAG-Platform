@@ -14,16 +14,19 @@ from tests.qa_helpers import RecordingReranker
 class Scripted:
     configured = True
 
-    def __init__(self, accept_round=99, citation="W1"):
+    def __init__(self, accept_round=99, citation="W1", translation="What about 0.1 and 0.7?"):
         self.calls = []
         self.round = 0
         self.accept_round = accept_round
         self.citation = citation
+        self.translation = translation
 
     def complete(self, model, messages):
         self.calls.append(messages)
         prompt = messages[0]["content"]
-        if "[stage:grade]" in prompt:
+        if "[stage:translate]" in prompt:
+            result = ModelAnswer(answer=self.translation, citations=[], insufficient_evidence=False)
+        elif "[stage:grade]" in prompt:
             self.round += 1
             ids = ["E1"] if self.round >= self.accept_round else []
             result = ModelAnswer(answer="判断", citations=ids, insufficient_evidence=not ids)
@@ -200,3 +203,58 @@ def test_invalid_grading_ids_never_enter_generation():
     with pytest.raises(AppError, match="相关性"):
         execute(provider, Search())
     assert len(provider.calls) == 1
+
+
+def run_question(question, provider):
+    reranker = RecordingReranker()
+    row = Evidence(
+        id="chunk",
+        page=1,
+        text="English table row",
+        block_ids=[],
+        boxes=[],
+        source_id="E1",
+        document_id="doc",
+        title="Fixture",
+        filename="fixture.pdf",
+        score=0.9,
+    )
+    agent = CorrectiveAgent(provider, reranker, Search(), "flash", 12000, top_n=3)
+    state = agent.run(
+        question,
+        question,
+        lambda query: [row],
+        lambda: None,
+        [],
+        [],
+        allow_web=False,
+        chat=False,
+    )
+    return agent, state, reranker
+
+
+def test_chinese_question_reranks_with_english_translation():
+    provider = Scripted(accept_round=1, citation="E1")
+    agent, state, reranker = run_question("缺失率 0.1 增加到 0.7 时 Acc2 是多少？", provider)
+    assert [s.node for s in state["trace"]].count("translate_query") == 1
+    assert reranker.questions == ["What about 0.1 and 0.7?"]
+    assert state["search_query_en"] == "What about 0.1 and 0.7?"
+    assert agent.calls == 3
+
+
+def test_translation_losing_numbers_falls_back_to_original_query():
+    provider = Scripted(accept_round=1, citation="E1", translation="What about the missing rate?")
+    agent, state, reranker = run_question("缺失率 0.1 增加到 0.7 时 Acc2 是多少？", provider)
+    assert reranker.questions == ["缺失率 0.1 增加到 0.7 时 Acc2 是多少？"]
+    assert state["search_query_en"] == "缺失率 0.1 增加到 0.7 时 Acc2 是多少？"
+    reasons = [s.reason for s in state["trace"] if s.node == "translate_query"]
+    assert reasons == ["numbers_lost"]
+    assert agent.calls == 3
+
+
+def test_english_question_skips_translation_call():
+    provider = Scripted(accept_round=1, citation="E1")
+    agent, state, reranker = run_question("What is Acc2 at 0.1 and 0.7?", provider)
+    assert all(s.node != "translate_query" for s in state["trace"])
+    assert reranker.questions == ["What is Acc2 at 0.1 and 0.7?"]
+    assert agent.calls == 2

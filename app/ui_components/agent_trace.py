@@ -2,6 +2,7 @@ import streamlit as st
 
 NODES = {
     "route_query": "范围路由",
+    "translate_query": "问题英译（仅精排）",
     "retrieve": "混合检索",
     "rerank": "Cross-Encoder 精排",
     "grade_documents": "相关性过滤",
@@ -24,7 +25,7 @@ def render_trace(result: dict) -> None:
         return
     with st.expander("本轮执行过程"):
         st.caption(
-            f"查询改写 {result['rewrite_count']}/2 次 · 模型调用 {result['model_calls']}/6 次 · "
+            f"查询改写 {result['rewrite_count']}/2 次 · 模型调用 {result['model_calls']}/7 次 · "
             f"联网：{STATUS.get(result['web_status'], result['web_status'])}"
         )
         for step in result["trace"]:

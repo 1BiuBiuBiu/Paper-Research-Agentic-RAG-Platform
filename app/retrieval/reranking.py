@@ -36,8 +36,8 @@ class CrossEncoderReranker:
     def rank(self, question: str, candidates: list[Evidence], top_n: int = 5) -> list[Evidence]:
         if not candidates:
             return []
-        if len(candidates) > 20:
-            raise AppError("rerank_limit", "精排候选超过 20 条上限。", 422)
+        if len(candidates) > self.settings.candidates:
+            raise AppError("rerank_limit", f"精排候选超过 {self.settings.candidates} 条上限。", 422)
         if not self.ready():
             raise AppError(
                 "reranker_unavailable",

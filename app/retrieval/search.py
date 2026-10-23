@@ -35,10 +35,14 @@ def retrieve(
     top_k: int = 5,
     query_vectors: np.ndarray | None = None,
     post_filter: bool = True,
+    depth: int | None = None,
 ) -> list[Evidence]:
     """Load only the manifest belonging to the explicit scope, never a global top-k."""
     if manifest.document_id != document.id:
         raise AppError("scope_mismatch", "检索范围校验失败。", 409)
+    # Recall depth must be able to feed the fused library-level pool, otherwise a larger
+    # top_k silently returns nothing extra because dense/BM25 still stop at 20.
+    recall_depth = max(top_k, depth or 0, 20)
     parts = [question[start : start + 700] for start in range(0, len(question), 600)]
     vectors = service.embedder.encode(parts) if query_vectors is None else query_vectors
     if vectors.shape != (len(parts), manifest.dimension):
@@ -50,7 +54,7 @@ def retrieve(
         if index.ntotal != len(manifest.chunks) + manifest.abstract_count:
             raise ValueError("Index count mismatch")
         similarities, identifiers = index.search(
-            vector, min(20 + manifest.abstract_count, index.ntotal)
+            vector, min(recall_depth + manifest.abstract_count, index.ntotal)
         )
     except (RuntimeError, ValueError):
         raise AppError("index_corrupt", "索引损坏，请重新建立索引。", 503) from None
@@ -65,7 +69,9 @@ def retrieve(
     query_terms = tokens(question)
     sparse = BM25Okapi([tokens(c.text) or ["__empty__"] for c in manifest.chunks])
     sparse_scores = sparse.get_scores(query_terms)
-    sparse_ids = [int(i) for i in np.argsort(sparse_scores)[::-1][:20] if sparse_scores[i] > 0]
+    sparse_ids = [
+        int(i) for i in np.argsort(sparse_scores)[::-1][:recall_depth] if sparse_scores[i] > 0
+    ]
     fused: dict[int, float] = {}
     for ranking in (dense, sparse_ids):
         for rank, identifier in enumerate(ranking):

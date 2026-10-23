@@ -67,18 +67,44 @@ class AgentAnswerService:
         def search(question: str) -> list[Evidence]:
             parts = [question[start : start + 700] for start in range(0, len(question), 600)]
             vectors = self.indices.embedder.encode(parts)
+            depth = self.registry.settings.per_paper_candidates
             candidates = [
                 e
                 for d, m in zip(documents, manifests, strict=True)
                 for e in retrieve(
-                    self.indices, d, m, question, top_k=20, query_vectors=vectors, post_filter=False
+                    self.indices,
+                    d,
+                    m,
+                    question,
+                    top_k=depth,
+                    query_vectors=vectors,
+                    post_filter=False,
                 )
             ]
             candidates.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
-            return [
-                e.model_copy(update={"source_id": f"E{i + 1}"})
-                for i, e in enumerate(candidates[:20])
-            ]
+            # Rank fusion decides the library-level pool, but a small per-paper floor keeps one
+            # strong paper from consuming every slot in a multi-paper scope.
+            selected: list[Evidence] = []
+            taken: set[tuple[str, str]] = set()
+            quota = min(2, self.registry.settings.candidates)
+            per_paper: dict[str, int] = {}
+            for e in candidates:
+                if per_paper.get(e.document_id, 0) >= quota:
+                    continue
+                if len(selected) >= self.registry.settings.candidates:
+                    break
+                per_paper[e.document_id] = per_paper.get(e.document_id, 0) + 1
+                selected.append(e)
+                taken.add((e.document_id, e.id))
+            for e in candidates:
+                if len(selected) >= self.registry.settings.candidates:
+                    break
+                if (e.document_id, e.id) in taken:
+                    continue
+                selected.append(e)
+                taken.add((e.document_id, e.id))
+            selected.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
+            return [e.model_copy(update={"source_id": f"E{i + 1}"}) for i, e in enumerate(selected)]
 
         overviews = [
             {
@@ -101,6 +127,8 @@ class AgentAnswerService:
             request.model,
             self.context_bytes,
             self.registry.settings.agent_timeout,
+            top_n=self.registry.settings.rerank_top_n,
+            max_calls=self.registry.settings.agent_max_calls,
         )
         state = workflow.run(
             request.question,

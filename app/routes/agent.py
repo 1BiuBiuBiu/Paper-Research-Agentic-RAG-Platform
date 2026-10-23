@@ -106,5 +106,5 @@ def agent_status(request: Request) -> dict:
         "reranker_model": request.app.state.settings.reranker_model,
         "web_configured": answers.web.configured,
         "max_rewrites": 2,
-        "max_model_calls": 6,
+        "max_model_calls": request.app.state.settings.agent_max_calls,
     }

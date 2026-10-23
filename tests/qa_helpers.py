@@ -65,6 +65,12 @@ class RecordingProvider:
                 citations=[],
                 insufficient_evidence=False,
             )
+        elif "[stage:translate]" in messages[0]["content"]:
+            result = ModelAnswer(
+                answer="Which wavelength did Aurora report?",
+                citations=[],
+                insufficient_evidence=False,
+            )
         return Completion(
             result=result,
             served_model="test-only-provider",
@@ -105,10 +111,14 @@ def seed_document(repository, body: str, abstract: str | None = None) -> Documen
 
 
 class RecordingReranker:
+    def __init__(self) -> None:
+        self.questions: list[str] = []
+
     def ready(self):
         return True
 
     def rank(self, question, candidates, top_n=5):
+        self.questions.append(question)
         return [e.model_copy(update={"rerank_score": 1.0}) for e in candidates[:top_n]]
 
 
