@@ -10,29 +10,35 @@ the index:
   in one evidence item; when that paragraph was retrieved too, the two items are merged and
   the paragraph item is dropped instead of repeating its text;
 - a figure caption chunk gets the paragraph that cites its figure, for the same reason;
+- a caption longer than the row prefix keeps its remainder, so the assembled item carries
+  the full caption even though the index only stores its first 300 characters;
 - anything else, including a paragraph naming a table/figure that is not in the ledger, is
   left exactly as retrieved.
+
+Nothing here is truncated: the citing paragraph is attached in full and the caption
+remainder is appended. The only byte limit left is the turn's own context budget, applied
+later by `context()` so the model request stays inside its cap.
 
 No extra retrieval, embedding or model call happens here, and the judge still sees the
 atomic rows so the grading prompt does not grow.
 """
 
+from dataclasses import dataclass
+
 from app.domain.papers import Document, Figure
 from app.domain.qa import Chunk, Evidence, IndexManifest
+from app.parsing.table_data import CAPTION_PREFIX_MAX
 
-ATTACH_MAX = 320
 
+@dataclass(frozen=True)
+class Attachment:
+    before: str = ""
+    after: str = ""
+    drop: tuple[str, str] | None = None
 
-def _snippet(text: str, limit: int) -> str:
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= limit:
-        return collapsed
-    cut = collapsed[:limit]
-    for mark in ("。", "！", "？", "；", ". ", "; "):
-        position = cut.rfind(mark)
-        if position >= limit // 2:
-            return cut[: position + len(mark)].strip()
-    return cut.rstrip() + "…"
+    def apply(self, item: Evidence) -> Evidence:
+        text = "\n".join(part for part in (self.before, item.text, self.after) if part)
+        return item.model_copy(update={"text": text})
 
 
 class _Paper:
@@ -60,46 +66,50 @@ class _Paper:
         return None
 
 
-def _citation_prefix(page: int, excerpt: bool) -> str:
-    suffix = "，节选" if excerpt else ""
-    return f"引用该图表的原文（第 {page} 页{suffix}）："
+def _citing(citing: Chunk | None) -> Attachment:
+    if citing is None:
+        return Attachment()
+    return Attachment(before=f"引用该图表的原文（第 {citing.page} 页）：{citing.text}")
 
 
-def _table_addition(
+def _table_attachment(
     item: Evidence,
     paper: _Paper,
     present: set[tuple[str, str]],
     attached: set[tuple[str, str]],
-    limit: int,
-) -> tuple[str, tuple[str, str] | None]:
+) -> Attachment:
     if not item.element_id or item.element_type != "table":
-        return "", None
+        return Attachment()
     table = paper.tables.get(item.element_id)
     if table is None:
-        return "", None
-    chunk = paper.citing_chunk(table.mention_block_ids)
-    if chunk is None or chunk.id == item.id:
-        return "", None
-    key = (item.document_id, chunk.id)
+        return Attachment()
+    after = ""
+    remainder = table.caption[CAPTION_PREFIX_MAX:].strip()
+    caption_key = (item.document_id, f"caption:{table.id}")
+    if remainder and caption_key not in attached:
+        # One row of the table carries the full caption once, not every row.
+        attached.add(caption_key)
+        after = f"表注（续）：{remainder}"
+    citing = paper.citing_chunk(table.mention_block_ids)
+    if citing is None or citing.id == item.id:
+        return Attachment(after=after)
+    key = (item.document_id, citing.id)
     if key in attached:
-        return "", None
+        return Attachment(after=after)
     attached.add(key)
+    referenced = _citing(citing)
     if key in present:
         # The paragraph is already evidence: move it into this item instead of repeating it.
-        return _citation_prefix(chunk.page, excerpt=False) + chunk.text, key
-    return (
-        _citation_prefix(chunk.page, excerpt=True) + _snippet(chunk.text, limit),
-        None,
-    )
+        return Attachment(before=referenced.before, after=after, drop=key)
+    return Attachment(before=referenced.before, after=after)
 
 
-def _figure_addition(
+def _figure_attachment(
     item: Evidence,
     paper: _Paper,
     present: set[tuple[str, str]],
     attached: set[tuple[str, str]],
-    limit: int,
-) -> tuple[str, tuple[str, str] | None]:
+) -> Attachment:
     figure = next(
         (
             paper.figure_captions[block_id]
@@ -109,24 +119,24 @@ def _figure_addition(
         None,
     )
     if figure is None:
-        return "", None
-    chunk = paper.citing_chunk(figure.mention_block_ids)
-    if chunk is None or chunk.id == item.id:
-        return "", None
-    key = (item.document_id, chunk.id)
+        return Attachment()
+    citing = paper.citing_chunk(figure.mention_block_ids)
+    if citing is None or citing.id == item.id:
+        return Attachment()
+    key = (item.document_id, citing.id)
     if key in attached:
-        return "", None
+        return Attachment()
     attached.add(key)
+    referenced = _citing(citing)
     if key in present:
-        return _citation_prefix(chunk.page, excerpt=False) + chunk.text, key
-    return _citation_prefix(chunk.page, excerpt=True) + _snippet(chunk.text, limit), None
+        return Attachment(before=referenced.before, drop=key)
+    return referenced
 
 
 def attach_references(
     evidence: list[Evidence],
     documents: dict[str, Document],
     manifests: dict[str, IndexManifest],
-    limit: int = ATTACH_MAX,
 ) -> list[Evidence]:
     """Return the same ledger with each table/figure unit's citing paragraph attached once."""
     papers = {
@@ -140,14 +150,14 @@ def attach_references(
     merged: list[Evidence] = []
     for item in evidence:
         paper = papers.get(item.document_id)
-        addition, drop = "", None
+        attachment = Attachment()
         if paper is not None:
-            addition, drop = _table_addition(item, paper, present, attached, limit)
-            if not addition:
-                addition, drop = _figure_addition(item, paper, present, attached, limit)
-        if addition:
-            item = item.model_copy(update={"text": addition + "\n" + item.text})
-            if drop is not None:
-                dropped.add(drop)
+            attachment = _table_attachment(item, paper, present, attached)
+            if not (attachment.before or attachment.after):
+                attachment = _figure_attachment(item, paper, present, attached)
+        if attachment.before or attachment.after:
+            item = attachment.apply(item)
+            if attachment.drop is not None:
+                dropped.add(attachment.drop)
         merged.append(item)
     return [item for item in merged if (item.document_id, item.id) not in dropped]

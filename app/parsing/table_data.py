@@ -2,6 +2,9 @@ from html import escape
 
 from app.domain.papers import PaperTable
 
+# The row prefix keeps at most this much caption; the rest is added again at assembly.
+CAPTION_PREFIX_MAX = 300
+
 
 def grid_warnings(table: PaperTable) -> list[str]:
     if not valid_grid(table):
@@ -156,7 +159,7 @@ def row_evidence(table: PaperTable, section: str = "") -> list[str]:
         if not cells:
             continue
         prefix = (
-            f"{table.label or table.id}: {table.caption[:300]}"
+            f"{table.label or table.id}: {table.caption[:CAPTION_PREFIX_MAX]}"
             f"{' | ' + section if section else ''} | row {row + 1} | 自动表格，待核对 | "
         )
         part = prefix

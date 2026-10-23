@@ -60,6 +60,7 @@ def build(
     table_mentions: list[str] | None = None,
     figure_mentions: list[str] | None = None,
     chunks: list[Chunk] | None = None,
+    caption: str = "Table 1: Results on CMU-MOSI.",
 ) -> tuple[dict[str, Document], dict[str, IndexManifest]]:
     table = PaperTable(
         id="t1",
@@ -67,7 +68,7 @@ def build(
         page=9,
         bbox=BOX,
         label="Table 1",
-        caption="Table 1: Results on CMU-MOSI.",
+        caption=caption,
         caption_block_ids=["cap"],
         mention_block_ids=table_mentions or [],
         rows=1,
@@ -160,12 +161,69 @@ def test_citing_paragraph_is_merged_into_its_table_row():
     assert "Acc2 = 92.1" in item.text
 
 
-def test_citing_paragraph_is_attached_when_it_was_not_retrieved():
+def test_citing_paragraph_is_attached_in_full_when_it_was_not_retrieved():
     documents, manifests = build(table_mentions=["p1"])
     merged = attach_references([row_and_paragraph()[1]], documents, manifests)
     assert len(merged) == 1
-    assert "引用该图表的原文（第 8 页，节选）" in merged[0].text
+    assert "引用该图表的原文（第 8 页）：" in merged[0].text
     assert "summarizes" in merged[0].text and merged[0].page == 9
+
+
+def test_a_long_citing_paragraph_is_not_truncated():
+    long_text = "Table 1 summarizes the full-modality comparison. " + "细节说明。" * 120
+    documents, manifests = build(table_mentions=["p1"])
+    manifest = manifests["doc"]
+    chunks = [
+        chunk("c-para", 8, long_text, ["p1"]),
+        *[item for item in manifest.chunks if item.id != "c-para"],
+    ]
+    manifests = {"doc": manifest.model_copy(update={"chunks": chunks})}
+    item = evidence(
+        "c-row",
+        9,
+        "Table 1: Results | row 1 | Acc2 = 92.1",
+        ["cap"],
+        element_type="table",
+        element_id="t1",
+    )
+    merged = attach_references([item], documents, manifests)
+    assert long_text in merged[0].text
+
+
+def test_a_caption_longer_than_the_row_prefix_keeps_its_remainder():
+    caption = "Table 1: " + "说明文字" * 80
+    documents, manifests = build(table_mentions=[], caption=caption)
+    item = evidence(
+        "c-row",
+        9,
+        "Table 1: Results | row 1 | Acc2 = 92.1",
+        ["cap"],
+        element_type="table",
+        element_id="t1",
+    )
+    merged = attach_references([item], documents, manifests)
+    assert "表注（续）：" in merged[0].text
+    assert caption[300:].strip()[:40] in merged[0].text
+
+
+def test_a_short_caption_adds_no_remainder_line():
+    documents, manifests = build(table_mentions=[], caption="Table 1: Short.")
+    item = evidence(
+        "c-row", 9, "Table 1: Short. | row 1", ["cap"], element_type="table", element_id="t1"
+    )
+    merged = attach_references([item], documents, manifests)
+    assert "表注（续）" not in merged[0].text
+
+
+def test_the_caption_remainder_is_added_once_per_table():
+    caption = "Table 1: " + "说明文字" * 80
+    documents, manifests = build(table_mentions=[], caption=caption)
+    rows = [
+        evidence("c-row", 9, "row 1", ["cap"], element_type="table", element_id="t1"),
+        evidence("c-row2", 9, "row 2", ["cap"], element_type="table", element_id="t1"),
+    ]
+    merged = attach_references(rows, documents, manifests)
+    assert sum("表注（续）" in item.text for item in merged) == 1
 
 
 def test_table_without_a_citing_paragraph_is_unchanged():
