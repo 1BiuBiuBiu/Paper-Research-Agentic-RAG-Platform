@@ -56,7 +56,7 @@ def create_app(
         application.state.conversations.repository.recover_interrupted()
         yield
 
-    application = FastAPI(title="Research Paper RAG", version="0.10.0", lifespan=lifespan)
+    application = FastAPI(title="Research Paper RAG", version="0.11.0", lifespan=lifespan)
     application.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
@@ -146,8 +146,8 @@ def create_app(
     def health() -> dict:
         return {
             "status": "ok",
-            "version": "0.10.0",
-            "slice": "S3.6",
+            "version": "0.11.0",
+            "slice": "S3.7",
             "parser": "docling",
             "rag_enabled": True,
             "model_configured": application.state.provider.configured,

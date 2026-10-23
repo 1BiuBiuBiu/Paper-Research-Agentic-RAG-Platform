@@ -27,3 +27,7 @@ Thumbs.db
 *.npz
 *.pem
 *.key
+
+# Private human evaluation annotations
+evaluation/datasets/*
+!evaluation/datasets/.gitkeep

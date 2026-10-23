@@ -1,0 +1,343 @@
+{
+  "$defs": {
+    "Answer": {
+      "additionalProperties": false,
+      "properties": {
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "answer": {
+          "title": "Answer",
+          "type": "string"
+        },
+        "answerable": {
+          "title": "Answerable",
+          "type": "boolean"
+        },
+        "answer_correct": {
+          "title": "Answer Correct",
+          "type": "boolean"
+        },
+        "required_components_complete": {
+          "title": "Required Components Complete",
+          "type": "boolean"
+        },
+        "citations_support_answer": {
+          "title": "Citations Support Answer",
+          "type": "boolean"
+        },
+        "scope_leakage": {
+          "title": "Scope Leakage",
+          "type": "boolean"
+        },
+        "correct_abstention": {
+          "title": "Correct Abstention",
+          "type": "boolean"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "question_id",
+        "question",
+        "answer",
+        "answerable",
+        "answer_correct",
+        "required_components_complete",
+        "citations_support_answer",
+        "scope_leakage",
+        "correct_abstention",
+        "citations"
+      ],
+      "title": "Answer",
+      "type": "object"
+    },
+    "Citation": {
+      "additionalProperties": false,
+      "properties": {
+        "citation_id": {
+          "title": "Citation Id",
+          "type": "string"
+        },
+        "supports_answer": {
+          "title": "Supports Answer",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "citation_id",
+        "supports_answer"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "GoldEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "element_type": {
+          "title": "Element Type",
+          "type": "string"
+        },
+        "table_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table Label"
+        },
+        "evidence_text": {
+          "title": "Evidence Text",
+          "type": "string"
+        },
+        "relevance": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Relevance",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "document_id",
+        "page",
+        "element_type",
+        "evidence_text",
+        "relevance"
+      ],
+      "title": "GoldEvidence",
+      "type": "object"
+    },
+    "Heading": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "is_real_section_heading": {
+          "title": "Is Real Section Heading",
+          "type": "boolean"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "maximum": 4,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Level"
+        },
+        "heading_type": {
+          "title": "Heading Type",
+          "type": "string"
+        },
+        "predicted_heading": {
+          "title": "Predicted Heading",
+          "type": "boolean"
+        },
+        "predicted_level": {
+          "anyOf": [
+            {
+              "maximum": 4,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Predicted Level"
+        }
+      },
+      "required": [
+        "document_id",
+        "text",
+        "page",
+        "is_real_section_heading",
+        "level",
+        "heading_type",
+        "predicted_heading",
+        "predicted_level"
+      ],
+      "title": "Heading",
+      "type": "object"
+    },
+    "Retrieval": {
+      "additionalProperties": false,
+      "properties": {
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "evidence_complete": {
+          "title": "Evidence Complete",
+          "type": "boolean"
+        },
+        "gold_evidence": {
+          "items": {
+            "$ref": "#/$defs/GoldEvidence"
+          },
+          "title": "Gold Evidence",
+          "type": "array"
+        },
+        "retrieved_evidence": {
+          "items": {
+            "$ref": "#/$defs/Retrieved"
+          },
+          "maxItems": 5,
+          "title": "Retrieved Evidence",
+          "type": "array"
+        },
+        "ideal_relevances": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Ideal Relevances",
+          "type": "array"
+        }
+      },
+      "required": [
+        "question_id",
+        "question",
+        "evidence_complete",
+        "gold_evidence",
+        "retrieved_evidence",
+        "ideal_relevances"
+      ],
+      "title": "Retrieval",
+      "type": "object"
+    },
+    "Retrieved": {
+      "additionalProperties": false,
+      "properties": {
+        "rank": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "relevance": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Relevance",
+          "type": "integer"
+        },
+        "matched_gold_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Matched Gold Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rank",
+        "source_id",
+        "relevance",
+        "matched_gold_ids"
+      ],
+      "title": "Retrieved",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "minProperties": 1,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "heading_candidates_complete": {
+      "title": "Heading Candidates Complete",
+      "type": "boolean"
+    },
+    "headings": {
+      "items": {
+        "$ref": "#/$defs/Heading"
+      },
+      "title": "Headings",
+      "type": "array"
+    },
+    "retrieval": {
+      "items": {
+        "$ref": "#/$defs/Retrieval"
+      },
+      "title": "Retrieval",
+      "type": "array"
+    },
+    "answers": {
+      "items": {
+        "$ref": "#/$defs/Answer"
+      },
+      "title": "Answers",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "provenance",
+    "heading_candidates_complete",
+    "headings",
+    "retrieval",
+    "answers"
+  ],
+  "title": "Dataset",
+  "type": "object"
+}
