@@ -36,6 +36,8 @@ Heading F1 使用汇总 TP/FP/FN 的 micro F1。Level Accuracy 仅在 TP 上计�
 采集**原始问题第一轮 Cross-Encoder 精排后、LLM 过滤前**的 Top 5；保持原顺序，不混入改写轮或网页结果。
 每轮最多 20 候选；本评分器不改变现有检索链路。
 
+注：当前实现每轮精排 10 条（`RESEARCH_RERANK_TOP_N`），两轮并集进账本；评分器仍按本协议的 @5 计分。需要 @10 的正式字段时，要先把 `Retrieved.rank`、`ideal_relevances` 的 k 参数化（评分器、schema、测试一起改），见 [S3.10 六项指标](../references/S3.10六项指标.md) 里“协议 @5 与实现 @10”的对照。
+
 gold_evidence 每项包含 `evidence_id, document_id, page, element_type, table_label（可省略）,
 evidence_text, relevance`。relevance=2 表示直接答案证据，1 表示相关不足；evidence_id 由标注者稳定分配。
 表格行、图表趋势、不同方法比较等按实际所需证据单元标注，不按块数量重复扩充金标准。
