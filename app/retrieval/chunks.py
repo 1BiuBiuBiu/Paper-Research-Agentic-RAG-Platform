@@ -2,13 +2,39 @@ import hashlib
 import json
 from uuid import UUID, uuid5
 
-from app.domain.papers import Document
+from app.domain.papers import Block, Document, PaperTable
 from app.domain.qa import Chunk
 from app.parsing.table_data import row_evidence
 
 CHUNK_SIZE = 700
 OVERLAP = 100
-CHUNK_VERSION = "research-chunks-v2"
+CHUNK_VERSION = "research-chunks-v3"
+
+
+def table_section(table: PaperTable, blocks: list[Block]) -> str:
+    """Section of the paragraph that references the table, falling back to its caption position."""
+    ordering = {block.id: block.order for block in blocks}
+    references = table.mention_block_ids or table.caption_block_ids
+    anchors = [ordering[item] for item in references if item in ordering]
+    if not anchors:
+        return ""
+    limit = min(anchors)
+    headings = [
+        block
+        for block in blocks
+        if block.kind == "section_header" and block.heading_level and block.order < limit
+    ]
+    if not headings:
+        return ""
+    path = [headings[-1].text.strip()]
+    level = headings[-1].heading_level or 1
+    for block in reversed(headings[:-1]):
+        if (block.heading_level or 1) < level:
+            path.append(block.text.strip())
+            level = block.heading_level or 1
+            if level <= 1:
+                break
+    return " / ".join(reversed(path))[:120]
 
 
 def fingerprint(document: Document, model: str, revision: str) -> str:
@@ -51,7 +77,8 @@ def build_chunks(document: Document) -> list[Chunk]:
                 )
             )
     for table in document.parsed.tables:
-        for index, text in enumerate(row_evidence(table)):
+        section = table_section(table, document.parsed.blocks)
+        for index, text in enumerate(row_evidence(table, section)):
             chunks.append(
                 Chunk(
                     id=str(uuid5(UUID(document.id), f"{table.source_ref}:{index}:{text}")),

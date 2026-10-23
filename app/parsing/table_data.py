@@ -66,7 +66,47 @@ def table_html(table: PaperTable) -> str:
     return '<table class="paper-table">' + "".join(rows) + "</table>"
 
 
-def row_evidence(table: PaperTable) -> list[str]:
+def _variant(text: str) -> str:
+    """Return the remainder when a label is a sub-row variant such as '-w/ WisdoM'."""
+    stripped = text.strip()
+    lowered = stripped.lower()
+    for prefix in ("-w/", "+w/", "w/o", "w/"):
+        if lowered.startswith(prefix):
+            return stripped[len(prefix) :].strip(" -–—")
+    return ""
+
+
+def row_labels(table: PaperTable) -> dict[int, str]:
+    """Rebuild row labels, repairing a variant cell that Docling merged into the row above.
+
+    Layouts like "Model | -w/ WisdoM" parse as row N = "-w/ WisdoM Model" and row N+1 =
+    "-w/ WisdoM", which makes the baseline row look like the enhanced one. When a label
+    starts with the next row's whole label and that label is a variant, the model name is
+    moved back to its own row and the variant is re-attached as "Model / variant".
+    """
+    labels: dict[int, str] = {}
+    for row in range(table.rows):
+        cells = sorted(
+            (
+                cell
+                for cell in table.cells
+                if cell.row_start <= row < cell.row_end and not cell.column_header
+            ),
+            key=lambda cell: cell.col_start,
+        )
+        if cells:
+            labels[row] = cells[0].text.strip()
+    for row in sorted(labels)[:-1]:
+        current, following = labels[row], labels.get(row + 1, "")
+        if following and _variant(following) and current.startswith(following):
+            remainder = current[len(following) :].strip(" -–—/")
+            if remainder:
+                labels[row] = remainder
+                labels[row + 1] = f"{remainder} / {following}"
+    return labels
+
+
+def row_evidence(table: PaperTable, section: str = "") -> list[str]:
     if not valid_grid(table):
         return []
     headers = [
@@ -78,21 +118,26 @@ def row_evidence(table: PaperTable) -> list[str]:
         or f"column {col + 1}"
         for col in range(table.columns)
     ]
+    labels = row_labels(table)
     output: list[str] = []
     for row in range(table.rows):
-        cells = [c for c in table.cells if c.row_start <= row < c.row_end and not c.column_header]
+        cells = sorted(
+            (c for c in table.cells if c.row_start <= row < c.row_end and not c.column_header),
+            key=lambda c: c.col_start,
+        )
         if not cells:
             continue
         prefix = (
-            f"{table.label or table.id}: {table.caption[:100]} | "
-            f"row {row + 1} | 自动表格，待核对 | "
+            f"{table.label or table.id}: {table.caption[:300]}"
+            f"{' | ' + section if section else ''} | row {row + 1} | 自动表格，待核对 | "
         )
         part = prefix
         for cell in cells:
             label = " / ".join(headers[cell.col_start : cell.col_end])
+            text = labels.get(row, cell.text) if cell is cells[0] else cell.text
             # Retain each value's column and row identity even if a long cell needs splitting.
-            for start in range(0, max(1, len(cell.text)), 350):
-                value = f"{label[:100]} = {cell.text[start : start + 350]}; "
+            for start in range(0, max(1, len(text)), 350):
+                value = f"{label[:100]} = {text[start : start + 350]}; "
                 if len(part) + len(value) > 700:
                     output.append(part)
                     part = prefix
