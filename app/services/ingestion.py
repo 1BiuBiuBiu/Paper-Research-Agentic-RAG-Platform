@@ -2,6 +2,7 @@ import hashlib
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -21,11 +22,31 @@ class Parser(Protocol):
 
 
 class IngestionService:
-    def __init__(self, settings: Settings, repository: PaperRepository, parser: Parser) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repository: PaperRepository,
+        parser: Parser,
+        on_parsed: Callable[[str], None] | None = None,
+    ) -> None:
         self.settings = settings
         self.repository = repository
         self.parser = parser
+        self.on_parsed = on_parsed
         self.lock = threading.Lock()
+
+    def _notify_parsed(self, document_id: str) -> None:
+        """Queue the automatic index build; a queue problem must not fail the parse."""
+        if self.on_parsed is None:
+            return
+        try:
+            self.on_parsed(document_id)
+        except Exception as error:
+            logger.warning(
+                "index_queue_failure document_id=%s type=%s",
+                document_id,
+                type(error).__name__,
+            )
 
     def ingest(self, source: Path, filename: str) -> tuple[Document, bool]:
         if not self.lock.acquire(blocking=False):
@@ -94,9 +115,11 @@ class IngestionService:
         if not self.lock.acquire(blocking=False):
             raise AppError("ingestion_busy", "正在解析另一篇论文，请稍后再试。", 409)
         try:
-            return reprocess(self.repository, self.parser, self.settings.data_dir, document_id)
+            document = reprocess(self.repository, self.parser, self.settings.data_dir, document_id)
         finally:
             self.lock.release()
+        self._notify_parsed(document.id)
+        return document
 
     def _parse(self, document: Document) -> Document:
         directory = self.settings.data_dir / "papers" / document.id
@@ -118,4 +141,6 @@ class IngestionService:
             document.error_code = "parser_failed"
             document.error_message = "解析失败，可检查模型安装后重试。"
         self.repository.save(document)
+        if document.status == "parsed":
+            self._notify_parsed(document.id)
         return document

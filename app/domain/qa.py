@@ -49,6 +49,7 @@ class IndexManifest(BaseModel):
     revision: str
     dimension: int
     file_sha256: str = ""
+    bm25_sha256: str = ""
     created_at: str
     chunks: list[Chunk]
     abstract_count: int = 0
@@ -85,6 +86,12 @@ class ModelAnswer(BaseModel):
     answer: str = Field(min_length=1, max_length=20000)
     citations: list[str] = Field(max_length=20)
     insufficient_evidence: bool
+    # Grading stages report whether this round's documents answer the question completely.
+    # Generation leaves these unset; they never become part of the answer text.
+    sufficient: bool | None = None
+    covered: list[str] = Field(default_factory=list, max_length=12)
+    missing: list[str] = Field(default_factory=list, max_length=12)
+    next_query: str = Field(default="", max_length=4000)
 
 
 class Completion(BaseModel):

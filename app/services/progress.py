@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 STEP_LABELS = {
     "route_query": "确定范围",
     "translate_query": "生成英文检索式",
-    "retrieve": "召回候选",
+    "retrieve": "库级召回",
     "rerank": "Cross-Encoder 精排",
-    "grade_documents": "判断证据是否足够",
-    "rewrite_query": "证据不足，改写后重新检索",
+    "grade_documents": "判分：本轮文档能否完整回答",
+    "targeted_retrieve": "定向补检（第 2 轮）",
     "web_search": "联网补充",
     "generate": "生成回答",
 }

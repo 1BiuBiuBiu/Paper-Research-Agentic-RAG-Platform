@@ -15,7 +15,7 @@ from app.repositories.papers import PaperRepository
 from app.retrieval.embedding import BGEEmbedder
 from app.retrieval.indexing import IndexService
 from app.retrieval.reranking import CrossEncoderReranker
-from app.retrieval.search import retrieve
+from app.retrieval.search import fuse, library_candidates
 from app.ui_components.page_reading import heading_depth
 
 ROOT = Path("evaluation/datasets")
@@ -94,23 +94,21 @@ def main():
     for q in load("rag_questions.jsonl"):
         print("Retrieving " + q["question_id"], flush=True)
         vectors = indices.embedder.encode([q["question"]])
-        candidates = []
-        for original_id in q["scope_document_ids"]:
-            doc = papers.get(mapping[original_id])
-            candidates.extend(
-                retrieve(
-                    indices,
-                    doc,
-                    indices.require(doc),
-                    q["question"],
-                    top_k=20,
-                    query_vectors=vectors,
-                    post_filter=False,
-                )
-            )
-        candidates.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
+        documents = [papers.get(mapping[original_id]) for original_id in q["scope_document_ids"]]
+        manifests = [indices.require(document) for document in documents]
+        candidates = fuse(
+            library_candidates(
+                indices,
+                documents,
+                manifests,
+                q["question"],
+                settings.candidates,
+                query_vectors=vectors,
+            ),
+            settings.candidates,
+        )
         candidates = [
-            e.model_copy(update={"source_id": f"E{i + 1}"}) for i, e in enumerate(candidates[:20])
+            e.model_copy(update={"source_id": f"E{i + 1}"}) for i, e in enumerate(candidates)
         ]
         ranked = reranker.rank(q["question"], candidates, top_n=5)
         outputs.append(

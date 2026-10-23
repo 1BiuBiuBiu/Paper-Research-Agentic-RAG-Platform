@@ -82,10 +82,21 @@ def qa_page() -> None:
         st.session_state.pop("qa_question", None)
     status = api("GET", f"/documents/{identifier}/index")
     if status["status"] == "ready":
-        st.caption(f"检索索引已就绪 · {status['chunks']} 个原文片段")
+        st.caption(f"检索索引已就绪 · {status['chunks']} 个原文片段（解析后自动建立）")
+    elif status["status"] == "building":
+        st.info("索引正在后台建立；完成后即可提问，无需手动操作。")
+        if st.button("刷新索引状态"):
+            st.rerun()
     else:
-        st.info("这篇论文尚无有效检索索引，请先建立索引。摘要或原文修改后需要更新。")
-        if st.button("建立 / 更新检索索引", disabled=status["status"] == "building"):
+        if status["status"] == "failed":
+            st.error(
+                "索引建立失败："
+                + (status.get("message") or "未知原因")
+                + "。解析结果已保留，可单独重试索引。"
+            )
+        else:
+            st.info("这篇论文尚未建立有效检索索引（解析完成后会自动建立）。")
+        if st.button("立即建立 / 重试索引"):
             with st.spinner("正在本机计算论文向量，首次载入模型需要等待…"):
                 api("POST", f"/documents/{identifier}/index", timeout=660)
             st.rerun()

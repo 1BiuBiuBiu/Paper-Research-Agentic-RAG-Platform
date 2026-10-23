@@ -30,7 +30,7 @@ def test_schema_v4_migration_preserves_existing_unassigned_chat_and_document(set
         assert chat["title"] == "Previous title" and chat["project_id"] is None
         assert client.app.state.repository.get(paper.id).model_dump_json() == original
         with papers.connect() as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 6
 
 
 def test_projects_group_move_rename_and_restart_preserve_turns_and_papers(settings):

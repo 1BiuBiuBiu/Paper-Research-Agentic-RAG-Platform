@@ -2,6 +2,16 @@
 
 每个已验证切片记录问题、变更、验证和本地 Git 提交；提交只含本次范围。运行论文、密钥、备份和截图不进入 Git，未经指示不推送远程。
 
+## 0.13.0 · S3.10 · 2026-10-23
+
+- 解析成功即排队建索引：`POST /documents` 立即返回“解析完成”，`IndexService.queue_build` 在后台单线程依次写 `dense.faiss` 与 `bm25.json`，页面显示“索引中”。索引失败写入新的 `document_index_failures`（schema v6，只增表），与解析失败分开，可单独重试；`POST /documents/{id}/index` 仍是同步的手动建立／重试入口。
+- 稀疏预处理前移：新增 `app/retrieval/bm25.py`，解析期落盘每块 tf/长度、每篇 df 与倒排表；查询期只对问题分词，合并本次选中论文的 df 算 IDF 后查倒排取全局 Top 60。旧版只有稠密索引的论文用 `_backfill_sparse` 补 `bm25.json`，不重新编码向量。
+- 新增 `app/retrieval/cache.py`：按（论文 + 指纹）缓存向量与 BM25，`retain` 释放不在范围、30 分钟 TTL、300 MB／8 组 LRU；`GET /agent/status` 暴露缓存统计。
+- 检索改为一个库：`library_candidates` 对选中论文并集取稠密全局 Top 60 与 BM25 全局 Top 60，RRF 取 60；删除 `rank_candidates` 的每篇深度、`retrieval_depth` 与每篇保底 2 条。
+- 判分重建：`ModelAnswer` 增加 `sufficient/covered/missing/next_query`；判“本轮文档能否完整回答本轮问题”，第 2 轮只判新文档能否完整回答 Q1。一次定向补检、账本跨轮累积去重、生成输入含 `covered` 摘要并明列缺口；`missing` 服务端丢弃问题中不存在的数字与表号。
+- 调用上限 7→3（判分① + 判分② + 生成）；中文问题的 1 次英译仅用于精排且不计入上限，英文问题不产生该调用。进度新增判分结论与“缺 X → 定向补检（第 2 轮）”。
+- 测试 244 passed / 4 skipped；ruff、mypy（96 文件）、compileall、uv lock、uv pip check 通过。免费离线重放（未调用 LLM／联网）：25 题中 22 道可回答题的金标准**全部进入融合 Top 60 为 22/22**，未英译的原问句精排 Top 12 为 17/22；是否付费复测待用户授权。见 [S3.10 验收](references/S3.10验收记录.md)。
+
 ## 2026-10-23 · S3.9 25题端到端复测（应用仍0.12.0）
 
 - 用户授权后对同批 25 题重跑真实检索与 DeepSeek Flash（关闭联网）：有依据回答 14/25→**22/25**，可回答题 12/22→**19/22**，应拒答 2/3→3/3；79 次调用、86,983 tokens。

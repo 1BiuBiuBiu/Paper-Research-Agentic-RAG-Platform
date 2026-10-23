@@ -1,7 +1,5 @@
-import pytest
-
 from app.domain.qa import Evidence
-from app.retrieval.search import fuse, retrieval_depth
+from app.retrieval.search import fuse
 
 
 def row(document_id: str, identifier: str, score: float, bm25: float = 0.0) -> Evidence:
@@ -27,19 +25,20 @@ def test_global_ranking_does_not_reserve_a_slot_per_paper():
     assert [item.document_id for item in selected] == ["a", "a", "a"]
 
 
-def test_floor_guarantees_each_document_even_when_scores_are_low():
-    candidates = [row("a", str(index), 0.9 - index / 100) for index in range(6)]
-    candidates += [row("b", "only", 0.05)]
-    selected = fuse(candidates, 4, floor=2, required_documents=["a", "b"])
-    counts = {document: [e.document_id for e in selected].count(document) for document in "ab"}
-    assert len(selected) == 4 and counts["a"] >= 2 and counts["b"] == 1
-
-
-def test_floor_adds_rows_when_pool_is_not_full():
+def test_a_weak_paper_contributes_nothing():
     candidates = [row("a", str(index), 0.9 - index / 100) for index in range(3)]
-    candidates += [row("b", str(index), 0.2 - index / 100) for index in range(3)]
-    selected = fuse(candidates, 10, floor=2, required_documents=["a", "b"])
-    assert len(selected) == 6
+    candidates += [row("b", "only", 0.05)]
+    selected = fuse(candidates, 3)
+    assert len(selected) == 3 and all(item.document_id == "a" for item in selected)
+
+
+def test_fusion_prefers_rows_ranked_by_both_retrievers():
+    candidates = [
+        row("a", "both", 0.95, 9.0),
+        row("a", "dense", 0.9, 0.0),
+        row("a", "sparse", 0.1, 8.0),
+    ]
+    assert fuse(candidates, 1)[0].id == "both"
 
 
 def test_fusion_is_deterministic_for_equal_scores():
@@ -48,9 +47,6 @@ def test_fusion_is_deterministic_for_equal_scores():
     assert [e.id for e in fuse(first, 2)] == [e.id for e in fuse(second, 2)]
 
 
-@pytest.mark.parametrize(
-    "candidates,documents,minimum,expected",
-    [(60, 1, 20, 60), (60, 2, 20, 30), (60, 5, 20, 20), (60, 100, 20, 20)],
-)
-def test_retrieval_depth_fills_the_library_pool(candidates, documents, minimum, expected):
-    assert retrieval_depth(candidates, documents, minimum) == expected
+def test_fused_pool_never_exceeds_the_global_cap():
+    candidates = [row("a", str(index), 0.9 - index / 1000) for index in range(120)]
+    assert len(fuse(candidates, 60)) == 60

@@ -19,16 +19,21 @@ class Settings:
     embedding_model: str = "BAAI/bge-m3"
     embedding_revision: str = "5617a9f61b028005a4858fdac845db406aefb181"
     index_timeout: int = 600
+    # A successful parse queues the index build; only an explicit opt-out disables it.
+    auto_index: bool = True
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     reranker_revision: str = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
     reranker_timeout: int = 120
-    # Per-paper recall depth is an internal candidate budget, not a delivered quota.
-    per_paper_candidates: int = 20
-    # Upper bound for the fused library-level pool that reaches the reranker.
+    # One library over the selected papers: dense top-k and BM25 top-k, then fusion.
     candidates: int = 60
     rerank_top_n: int = 12
     agent_timeout: int = 600
-    agent_max_calls: int = 7
+    # Counted calls per turn: grade ①, grade ② (only if needed) and generation.
+    # The one-off translation used only for reranking is not counted.
+    agent_max_calls: int = 3
+    index_cache_mb: int = 300
+    index_cache_entries: int = 8
+    index_cache_ttl: int = 1800
     tavily_api_key: str = field(default="", repr=False)
 
     @classmethod
@@ -53,9 +58,12 @@ class Settings:
                 "RESEARCH_EMBEDDING_REVISION", "5617a9f61b028005a4858fdac845db406aefb181"
             ),
             index_timeout=int(value("RESEARCH_INDEX_TIMEOUT", "600")),
-            per_paper_candidates=int(value("RESEARCH_PER_PAPER_CANDIDATES", "20")),
+            auto_index=value("RESEARCH_AUTO_INDEX", "1") not in {"0", "false", "no"},
             candidates=int(value("RESEARCH_CANDIDATES", "60")),
             rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "12")),
-            agent_max_calls=int(value("RESEARCH_AGENT_MAX_CALLS", "7")),
+            agent_max_calls=int(value("RESEARCH_AGENT_MAX_CALLS", "3")),
+            index_cache_mb=int(value("RESEARCH_INDEX_CACHE_MB", "300")),
+            index_cache_entries=int(value("RESEARCH_INDEX_CACHE_ENTRIES", "8")),
+            index_cache_ttl=int(value("RESEARCH_INDEX_CACHE_TTL", "1800")),
             tavily_api_key=value("TAVILY_API_KEY"),
         )

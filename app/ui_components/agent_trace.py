@@ -3,12 +3,14 @@ import streamlit as st
 NODES = {
     "route_query": "范围路由",
     "translate_query": "问题英译（仅精排）",
-    "retrieve": "混合检索",
+    "retrieve": "库级混合检索",
     "rerank": "Cross-Encoder 精排",
-    "grade_documents": "相关性过滤",
-    "rewrite_query": "查询改写",
+    "grade_documents": "判分：能否完整回答",
+    "targeted_retrieve": "定向补检（第 2 轮）",
     "web_search": "联网补充",
     "generate": "最终回答",
+    # Stored turns from before 0.13.0 still carry the old rewrite node.
+    "rewrite_query": "查询改写（旧版）",
 }
 STATUS = {
     "not_needed": "本地证据足够",
@@ -25,13 +27,13 @@ def render_trace(result: dict) -> None:
         return
     with st.expander("本轮执行过程"):
         st.caption(
-            f"查询改写 {result['rewrite_count']}/2 次 · 模型调用 {result['model_calls']}/7 次 · "
+            f"定向补检 {result['rewrite_count']} 次 · 模型调用 {result['model_calls']} 次 · "
             f"联网：{STATUS.get(result['web_status'], result['web_status'])}"
         )
         for step in result["trace"]:
             label = NODES.get(step["node"], step["node"])
             st.text(
-                f"{label} · 改写轮次 {step['attempt']} · "
+                f"{label} · 轮次 {step['attempt'] + 1} · "
                 f"{step['count']} 条 · {step['elapsed_ms']} ms"
             )
             if step.get("query"):

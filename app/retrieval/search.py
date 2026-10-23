@@ -1,77 +1,87 @@
-import math
-import re
+"""Library-level retrieval over the union of the selected papers.
+
+There is one index over the union: dense cosine and BM25 each return a global top k, and
+fusion happens on those global ranks. A paper whose chunks all rank below the cut simply
+contributes nothing — there is no per-paper depth and no per-paper floor.
+"""
 
 import faiss
 import numpy as np
-from rank_bm25 import BM25Okapi
 
 from app.core.errors import AppError
 from app.domain.papers import Document
 from app.domain.qa import Evidence, IndexManifest
+from app.retrieval.bm25 import BM25Library, tokens
+from app.retrieval.cache import LoadedIndex
 from app.retrieval.indexing import IndexService
 
-STOP = set(
-    (
-        "the of and to is a in what how does are on this paper study that which "
-        "from with an for was be or by it as"
-    ).split()
-)
 RRF_CONSTANT = 60
 
 
-def tokens(text: str) -> list[str]:
-    result: list[str] = []
-    for word in re.findall(r"[a-z0-9_]+|[\u4e00-\u9fff]+", text.lower()):
-        if re.fullmatch(r"[\u4e00-\u9fff]+", word):
-            result.extend(word[i : i + 2] for i in range(max(1, len(word) - 1)))
-        elif word not in STOP:
-            result.append(word)
-    return result
-
-
-def rank_candidates(
+def _query_vector(
     service: IndexService,
-    document: Document,
-    manifest: IndexManifest,
+    dimension: int,
     question: str,
-    depth: int = 20,
-    query_vectors: np.ndarray | None = None,
-) -> list[Evidence]:
-    """Rank one document's chunks, keeping dense and BM25 scores for a later global fusion.
-
-    Scores are attached unchanged: cosine is comparable across documents because every
-    document uses the same fixed embedding model, BM25 is not, so fusion happens by rank.
-    """
-    if manifest.document_id != document.id:
-        raise AppError("scope_mismatch", "检索范围校验失败。", 409)
+    query_vectors: np.ndarray | None,
+) -> np.ndarray:
     parts = [question[start : start + 700] for start in range(0, len(question), 600)]
     vectors = service.embedder.encode(parts) if query_vectors is None else query_vectors
-    if vectors.shape != (len(parts), manifest.dimension):
+    if vectors.shape != (len(parts), dimension):
         raise AppError("embedding_mismatch", "向量模型维度变化，请重新建立索引。", 409)
     vector = np.asarray(vectors.mean(axis=0, keepdims=True), dtype="float32")
     faiss.normalize_L2(vector)
-    try:
-        index = faiss.read_index(str(service.index_path(manifest)))
-        if index.ntotal != len(manifest.chunks) + manifest.abstract_count:
-            raise ValueError("Index count mismatch")
-        similarities, identifiers = index.search(
-            vector, min(depth + manifest.abstract_count, index.ntotal)
-        )
-    except (RuntimeError, ValueError):
-        raise AppError("index_corrupt", "索引损坏，请重新建立索引。", 503) from None
-    # Abstract rows are considered first for orientation; only original body chunks are citable.
-    cosine: dict[int, float] = {}
-    for identifier, score in zip(identifiers[0], similarities[0], strict=True):
-        body_id = int(identifier) - manifest.abstract_count
-        if 0 <= body_id < len(manifest.chunks):
-            cosine[body_id] = float(score)
-    query_terms = tokens(question)
-    sparse = BM25Okapi([tokens(c.text) or ["__empty__"] for c in manifest.chunks])
-    sparse_scores = sparse.get_scores(query_terms)
-    sparse_ids = [int(i) for i in np.argsort(sparse_scores)[::-1][:depth] if sparse_scores[i] > 0]
+    return vector
+
+
+def _dense_top_k(
+    libraries: list[LoadedIndex], vector: np.ndarray, k: int
+) -> dict[tuple[int, int], float]:
+    """Score every body chunk of every paper, then keep the global top k.
+
+    Taking each paper's own top k before merging is exact: an item in the global top k
+    can never be worse than position k inside its own paper.
+    """
+    found: dict[tuple[int, int], float] = {}
+    for paper, library in enumerate(libraries):
+        body = library.vectors[library.abstract_count :]
+        if not len(body):
+            continue
+        scores = body @ vector[0]
+        depth = min(k, len(scores))
+        order = np.argsort(-scores, kind="stable")[:depth]
+        for position in order:
+            found[(paper, int(position))] = float(scores[int(position)])
+    ranked = sorted(found.items(), key=lambda item: (-item[1], item[0]))[:k]
+    return dict(ranked)
+
+
+def library_candidates(
+    service: IndexService,
+    documents: list[Document],
+    manifests: list[IndexManifest],
+    question: str,
+    k: int,
+    query_vectors: np.ndarray | None = None,
+) -> list[Evidence]:
+    """One dense top k and one BM25 top k over the union, returned as a mergeable pool."""
+    if not documents or not manifests:
+        return []
+    for document, manifest in zip(documents, manifests, strict=True):
+        if manifest.document_id != document.id:
+            raise AppError("scope_mismatch", "检索范围校验失败。", 409)
+    # Release indexes of papers that are no longer in scope before loading this one.
+    service.cache.retain({document.id for document in documents})
+    libraries = [service.library(document) for document in documents]
+    dimensions = {library.vectors.shape[1] for library in libraries}
+    if len(dimensions) != 1:
+        raise AppError("embedding_mismatch", "向量模型维度变化，请重新建立索引。", 409)
+    vector = _query_vector(service, dimensions.pop(), question, query_vectors)
+    dense = _dense_top_k(libraries, vector, k)
+    sparse = BM25Library([library.terms for library in libraries]).top_k(question, k)
     evidence: list[Evidence] = []
-    for identifier in sorted(set(cosine) | set(sparse_ids)):
-        chunk = manifest.chunks[identifier]
+    for paper, position in sorted(set(dense) | set(sparse)):
+        document, manifest = documents[paper], manifests[paper]
+        chunk = manifest.chunks[position]
         evidence.append(
             Evidence(
                 **chunk.model_dump(),
@@ -81,24 +91,15 @@ def rank_candidates(
                 if document.parsed
                 else document.filename,
                 filename=document.filename,
-                score=cosine.get(identifier, 0.0),
-                bm25_score=float(sparse_scores[identifier]),
+                score=dense.get((paper, position), 0.0),
+                bm25_score=sparse.get((paper, position), 0.0),
             )
         )
     return evidence
 
 
-def fuse(
-    candidates: list[Evidence],
-    k: int,
-    floor: int = 0,
-    required_documents: list[str] | tuple[str, ...] = (),
-) -> list[Evidence]:
-    """Reciprocal-rank fusion across every selected document, then take k.
-
-    Dense and sparse rankings are fused by global rank, not by each document's own rank,
-    so a document cannot claim a slot just by being the best of a weak paper.
-    """
+def fuse(candidates: list[Evidence], k: int) -> list[Evidence]:
+    """Reciprocal-rank fusion of the global dense and sparse rankings, then take k."""
     if not candidates or k <= 0:
         return []
     unique: dict[tuple[str, str], Evidence] = {}
@@ -116,55 +117,7 @@ def fuse(
         item.model_copy(update={"fusion_score": fused[(item.document_id, item.id)]})
         for item in sorted(pool, key=lambda e: (-fused[(e.document_id, e.id)], e.document_id, e.id))
     ]
-    selected = ordered[:k]
-    if floor > 0 and required_documents:
-        by_document: dict[str, list[Evidence]] = {}
-        for item in ordered:
-            by_document.setdefault(item.document_id, []).append(item)
-        targets = {
-            document_id: min(floor, len(by_document.get(document_id, [])))
-            for document_id in required_documents
-        }
-        counts: dict[str, int] = {}
-        for item in selected:
-            counts[item.document_id] = counts.get(item.document_id, 0) + 1
-        chosen = {(item.document_id, item.id) for item in selected}
-        for document_id, target in targets.items():
-            for item in by_document.get(document_id, []):
-                if counts.get(document_id, 0) >= target:
-                    break
-                key = (item.document_id, item.id)
-                if key in chosen:
-                    continue
-                if len(selected) < k:
-                    selected.append(item)
-                else:
-                    victim = next(
-                        (
-                            index
-                            for index in range(len(selected) - 1, -1, -1)
-                            if counts[selected[index].document_id]
-                            > targets.get(selected[index].document_id, 1)
-                        ),
-                        None,
-                    )
-                    if victim is None:
-                        break
-                    counts[selected[victim].document_id] -= 1
-                    chosen.discard((selected[victim].document_id, selected[victim].id))
-                    selected[victim] = item
-                chosen.add(key)
-                counts[document_id] = counts.get(document_id, 0) + 1
-        selected.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
-    return selected
-
-
-def retrieval_depth(candidates: int, documents: int, minimum: int = 20) -> int:
-    """Per-document recall depth needed to fill a library-level pool of `candidates`."""
-    if documents <= 0:
-        return max(minimum, 1)
-    needed = math.ceil(candidates / documents)
-    return max(minimum, min(candidates, needed))
+    return ordered[:k]
 
 
 def retrieve(
@@ -175,16 +128,10 @@ def retrieve(
     top_k: int = 5,
     query_vectors: np.ndarray | None = None,
     post_filter: bool = True,
-    depth: int | None = None,
 ) -> list[Evidence]:
     """Single-document convenience path: rank, fuse locally, then apply the lexical guard."""
-    candidates = rank_candidates(
-        service,
-        document,
-        manifest,
-        question,
-        depth=depth or max(top_k, 20),
-        query_vectors=query_vectors,
+    candidates = library_candidates(
+        service, [document], [manifest], question, max(top_k, 20), query_vectors
     )
     selected = fuse(candidates, top_k)
     query_terms = tokens(question)

@@ -174,4 +174,4 @@ def test_schema_v2_migrates_without_rewriting_document_body(settings):
     assert repo.get(d.id).category_id is None
     with repo.connect() as db:
         assert db.execute("SELECT body FROM documents").fetchone()[0] == raw
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6

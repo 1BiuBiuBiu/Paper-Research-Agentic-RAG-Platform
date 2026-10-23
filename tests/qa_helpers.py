@@ -58,12 +58,14 @@ class RecordingProvider:
                     "nebula" == payload["question"].lower() and "nebula" not in e["text"].lower()
                 )
             ]
-            result = ModelAnswer(answer="判断", citations=ids, insufficient_evidence=not ids)
-        elif "[stage:rewrite]" in messages[0]["content"]:
             result = ModelAnswer(
-                answer=json.loads(messages[-1]["content"])["previous_query"],
-                citations=[],
-                insufficient_evidence=False,
+                answer="判分结论",
+                citations=ids,
+                insufficient_evidence=not ids,
+                sufficient=bool(ids),
+                covered=["观测值"] if ids else [],
+                missing=[] if ids else ["观测值"],
+                next_query="" if ids else "nebula wavelength",
             )
         elif "[stage:translate]" in messages[0]["content"]:
             result = ModelAnswer(

@@ -137,6 +137,7 @@ def agent_status(request: Request) -> dict:
         "reranker_ready": bool(getattr(answers.reranker, "ready", lambda: True)()),
         "reranker_model": request.app.state.settings.reranker_model,
         "web_configured": answers.web.configured,
-        "max_rewrites": 2,
+        "max_targeted_retrievals": 1,
         "max_model_calls": request.app.state.settings.agent_max_calls,
+        "index_cache": request.app.state.indexing.cache.stats(),
     }

@@ -23,6 +23,7 @@ from app.repositories.conversations import ConversationRepository
 from app.repositories.indices import IndexRepository
 from app.repositories.papers import PaperRepository
 from app.repositories.projects import ProjectRepository
+from app.retrieval.cache import IndexCache
 from app.retrieval.embedding import BGEEmbedder, Embedder
 from app.retrieval.indexing import IndexService
 from app.retrieval.reranking import Reranker
@@ -55,20 +56,33 @@ def create_app(
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         repository.recover_interrupted()
         application.state.conversations.repository.recover_interrupted()
+        # Finish index builds interrupted by a restart; each parsed paper is indexed once.
+        if settings.auto_index:
+            application.state.indexing.resume_pending()
         yield
 
-    application = FastAPI(title="Research Paper RAG", version="0.12.0", lifespan=lifespan)
+    application = FastAPI(title="Research Paper RAG", version="0.13.0", lifespan=lifespan)
     application.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
     application.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_upload_bytes + 65536)
     application.state.settings = settings
     application.state.repository = repository
-    application.state.ingestion = IngestionService(
-        settings, repository, parser or DoclingRunner(settings.parse_timeout)
-    )
     application.state.indexing = IndexService(
-        repository, IndexRepository(repository), embedder or BGEEmbedder(settings)
+        repository,
+        IndexRepository(repository),
+        embedder or BGEEmbedder(settings),
+        IndexCache(
+            max_bytes=settings.index_cache_mb * 1024 * 1024,
+            max_entries=settings.index_cache_entries,
+            ttl=float(settings.index_cache_ttl),
+        ),
+    )
+    application.state.ingestion = IngestionService(
+        settings,
+        repository,
+        parser or DoclingRunner(settings.parse_timeout),
+        on_parsed=application.state.indexing.queue_build if settings.auto_index else None,
     )
     application.state.provider = provider or DeepSeekProvider(settings)
     application.state.connections = ConnectionRepository(repository)
@@ -148,8 +162,8 @@ def create_app(
     def health() -> dict:
         return {
             "status": "ok",
-            "version": "0.12.0",
-            "slice": "S3.7",
+            "version": "0.13.0",
+            "slice": "S3.10",
             "parser": "docling",
             "rag_enabled": True,
             "model_configured": application.state.provider.configured,

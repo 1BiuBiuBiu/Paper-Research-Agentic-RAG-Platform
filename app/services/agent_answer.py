@@ -11,7 +11,7 @@ from app.providers.registry import ModelRegistry
 from app.providers.web_search import TavilySearch, WebSearch
 from app.retrieval.indexing import IndexService
 from app.retrieval.reranking import CrossEncoderReranker, Reranker
-from app.retrieval.search import fuse, rank_candidates, retrieval_depth
+from app.retrieval.search import fuse, library_candidates
 from app.services.agent_scope import ScopeResolver
 from app.services.corrective_agent import CorrectiveAgent
 from app.services.qa import clip_bytes
@@ -68,31 +68,26 @@ class AgentAnswerService:
             fresh = self.scopes.resolve(request.scope)
             if [d.id for d in fresh] != [d.id for d in documents]:
                 raise AppError("scope_changed", "回答期间文件夹成员变化，请重新提问。", 409)
-            if any(not self.indices.current(d, m) for d, m in zip(fresh, manifests, strict=True)):
+            if any(
+                not self.indices.usable(d, m) for d, m in zip(fresh, manifests, strict=True)
+            ):
                 raise AppError("document_changed", "回答期间文献发生变化，请更新索引。", 409)
 
         def search(question: str) -> list[Evidence]:
             parts = [question[start : start + 700] for start in range(0, len(question), 600)]
             vectors = self.indices.embedder.encode(parts)
             settings = self.registry.settings
-            depth = retrieval_depth(
-                settings.candidates, len(documents), settings.per_paper_candidates
+            # One library over the selected papers: dense top-k and BM25 top-k over the union,
+            # then rank fusion. A paper with no matching chunk contributes nothing.
+            candidates = library_candidates(
+                self.indices,
+                documents,
+                manifests,
+                question,
+                k=settings.candidates,
+                query_vectors=vectors,
             )
-            candidates = [
-                e
-                for d, m in zip(documents, manifests, strict=True)
-                for e in rank_candidates(
-                    self.indices, d, m, question, depth=depth, query_vectors=vectors
-                )
-            ]
-            # One global rank fusion over every selected document, then a small per-paper floor
-            # so a single strong paper cannot consume the whole library-level pool.
-            selected = fuse(
-                candidates,
-                settings.candidates,
-                floor=2,
-                required_documents=[d.id for d in documents],
-            )
+            selected = fuse(candidates, settings.candidates)
             return [e.model_copy(update={"source_id": f"E{i + 1}"}) for i, e in enumerate(selected)]
 
         overviews = [
@@ -163,7 +158,7 @@ class AgentAnswerService:
             usage=workflow.usage,
             used_web=state["web_used"],
             web_status=state["web_status"],
-            rewrite_count=state["rewrite_count"],
+            rewrite_count=state["round"],
             model_calls=workflow.calls,
             trace=state["trace"],
         )

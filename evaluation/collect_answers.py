@@ -12,7 +12,7 @@ from app.repositories.papers import PaperRepository
 from app.retrieval.embedding import BGEEmbedder
 from app.retrieval.indexing import IndexService
 from app.retrieval.reranking import CrossEncoderReranker
-from app.retrieval.search import retrieve
+from app.retrieval.search import fuse, library_candidates
 from app.services.corrective_agent import CorrectiveAgent
 from evaluation.collect_pilot import OUT, ROOT, load, save
 
@@ -63,23 +63,21 @@ def main():
         def search(question, documents=documents):
             parts = [question[i : i + 700] for i in range(0, len(question), 600)]
             vectors = indices.embedder.encode(parts)
-            candidates = [
-                e
-                for d in documents
-                for e in retrieve(
+            manifests = [indices.require(document) for document in documents]
+            candidates = fuse(
+                library_candidates(
                     indices,
-                    d,
-                    indices.require(d),
+                    documents,
+                    manifests,
                     question,
-                    top_k=20,
+                    settings.candidates,
                     query_vectors=vectors,
-                    post_filter=False,
-                )
-            ]
-            candidates.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
+                ),
+                settings.candidates,
+            )
             return [
                 e.model_copy(update={"source_id": f"E{i + 1}"})
-                for i, e in enumerate(candidates[:20])
+                for i, e in enumerate(candidates)
             ]
 
         provider = RecordingProvider(settings)
@@ -111,7 +109,6 @@ def main():
                 chat=False,
             )
             completion = state["completion"]
-            accepted = set(provider.grades[-1]["citations"]) if provider.grades else set()
             outputs.append(
                 dict(
                     question_id=q["question_id"],
@@ -125,10 +122,11 @@ def main():
                     served_model=workflow.served_model,
                     model_calls=workflow.calls,
                     usage=workflow.usage.model_dump(),
-                    rewrite_count=state["rewrite_count"],
-                    final_top5=[
-                        e.model_dump() for e in state["candidates"] if e.source_id in accepted
-                    ],
+                    rewrite_count=state["round"],
+                    sufficient=state["sufficient"],
+                    covered=state["covered"],
+                    missing=state["missing"],
+                    ledger=[e.model_dump() for e in state["ledger"]],
                     cited_sources=[e.model_dump() for e in state["accepted"]],
                     trace=[r.model_dump() for r in state["trace"]],
                     used_web=state["web_used"],

@@ -45,7 +45,9 @@ def pdf_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(data_dir=tmp_path / "library")
+    # Application persistence tests keep the automatic index build off so a fixture parse
+    # never starts a real embedding subprocess; the queued build has its own test.
+    return Settings(data_dir=tmp_path / "library", auto_index=False)
 
 
 @pytest.fixture

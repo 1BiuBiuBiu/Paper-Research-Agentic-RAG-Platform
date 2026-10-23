@@ -76,10 +76,8 @@ def agent_workspace() -> None:
                             preview = api("POST", "/agent/scope", json=scope)
                         except ClientError as error:
                             st.caption(str(error))
-                    ready = bool(
-                        preview is not None
-                        and all(d["index_status"] == "ready" for d in preview["items"])
-                    )
+                    states = [d["index_status"] for d in preview["items"]] if preview else []
+                    ready = bool(preview is not None and all(s == "ready" for s in states))
                     flow = api("GET", "/agent/status")
                     if scope and scope["kind"] != "chat" and not flow["reranker_ready"]:
                         ready = False
@@ -88,6 +86,11 @@ def agent_workspace() -> None:
                         )
                     configured = bool(selected_model and selected_model["configured"])
                     pending = any(t["status"] == "pending" for t in conversation["turns"])
+                    building = (
+                        [p for p in preview["items"] if p["index_status"] == "building"]
+                        if preview
+                        else []
+                    )
                     with status_area.container():
                         if preview:
                             st.caption(
@@ -104,12 +107,38 @@ def agent_workspace() -> None:
                                 if scope and scope["kind"] == "all"
                                 else f"当前范围：{preview['count']} 篇论文"
                             )
-                            unready = [p for p in preview["items"] if p["index_status"] != "ready"]
-                            if unready:
-                                st.caption(f"{len(unready)} 篇需要建立索引。")
-                                if st.button("建立当前范围索引"):
+                            # Parsing queues the index build; the page reports it and waits.
+                            if building:
+                                st.caption(
+                                    f"{len(building)} 篇正在建立索引（解析完成即自动编码），"
+                                    "完成后刷新即可提问。"
+                                )
+                                if st.button("刷新索引状态"):
+                                    st.rerun()
+                            failed = [p for p in preview["items"] if p["index_status"] == "failed"]
+                            waiting = [
+                                p
+                                for p in preview["items"]
+                                if p["index_status"] in {"missing", "stale"}
+                            ]
+                            if failed:
+                                st.caption(f"{len(failed)} 篇索引失败，可单独重试。")
+                                if st.button("重试失败的索引"):
+                                    with st.status("正在本机重试索引…") as status:
+                                        for paper in failed:
+                                            st.write(paper["title"])
+                                            api(
+                                                "POST",
+                                                f"/documents/{paper['id']}/index",
+                                                timeout=660,
+                                            )
+                                        status.update(label="索引重试完成", state="complete")
+                                    st.rerun()
+                            if waiting:
+                                st.caption(f"{len(waiting)} 篇索引待建立。")
+                                if st.button("立即建立索引"):
                                     with st.status("正在本机建立索引…") as status:
-                                        for paper in unready:
+                                        for paper in waiting:
                                             st.write(paper["title"])
                                             api(
                                                 "POST",
