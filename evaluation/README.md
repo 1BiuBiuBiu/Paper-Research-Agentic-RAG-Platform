@@ -90,3 +90,9 @@ Citation Precision 汇总全部引用（micro），无引用返回 null；Scope 
 按问题实际要求判定语义完整性，接受等价表达。required_answer_components需区分必需事实与参考答案的补充解释；不能逐字匹配。
 同一报告尺度下省略百分号、不额外解释量纲、未给题外基线比较，不单独判错；数值尺度、单位或条件实际错误仍失败。
 本轮四题判分修正为成功，原输出不变；judgments和summary旧版在output/review_history中保留。后续独立测试前冻结此口径。
+
+## 仅回放章节规则
+
+`uv run python -m evaluation.replay_headings --source output/evaluation/pilot-2026-10-23 --output output/evaluation/heading-rules-0.11.2`
+
+读取保留的真实 result.json 和原金标准，核对原 PDF SHA256，输出到必须不存在的新目录；manifest 记录输入指纹。此入口只重算标题，不运行模型、不改论文库、原标签及旧报告。原协议待裁决项继续单列排除。新一期回放更换 output 路径。

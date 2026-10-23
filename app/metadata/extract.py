@@ -119,7 +119,7 @@ def _abstract(metadata: PaperMetadata, blocks: list[Block]) -> None:
                 selected.append(block.model_copy(update={"text": block.text[heading.end() :]}))
             continue
         if collecting and (
-            block.kind in {"section_header", "title"}
+            block.kind in {"section_header", "title", "publication_metadata"}
             or is_auxiliary(block.text)
             or re.match(r"^(?:\d[.\s]|Keywords|Index Terms|关键词)", block.text, re.I)
         ):

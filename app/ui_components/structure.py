@@ -153,11 +153,9 @@ def structure_view(document: dict[str, Any]) -> None:
                 st.json(value)
     with st.expander("章节与阅读顺序"):
         for block in paper["blocks"]:
-            if block["kind"] == "section_header" and not block["excluded_reason"]:
-                st.text(
-                    f"第 {block['page']} 页 · 层级 {block.get('heading_level') or '未判定'} · "
-                    + block["text"]
-                )
+            depth = heading_depth(block)
+            if depth is not None:
+                st.text(f"第 {block['page']} 页 · 层级 {depth} · " + block["text"])
         st.json(paper.get("reading_order", []))
     if paper.get("equations"):
         with st.expander("公式区域（未启用 LaTeX 识别）"):

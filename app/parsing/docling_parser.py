@@ -5,6 +5,7 @@ from app.domain.papers import Block, Box, Figure, JournalMetric, PageInfo, Parse
 from app.metadata.extract import extract_metadata
 from app.parsing.cleaning import clean_blocks
 from app.parsing.front_matter import repair_front_matter
+from app.parsing.headings import normalize_headings
 from app.parsing.structure import extract_tables, preserve_structure
 
 
@@ -72,6 +73,7 @@ def parse_pdf(path: Path, assets: Path, *, table_cell_matching: bool = True) -> 
             ref_to_ids.setdefault(item.self_ref, []).append(block_id)
     clean_blocks(blocks, pages)
     repair_front_matter(blocks, pages)
+    normalize_headings(blocks)
     metadata = extract_metadata(blocks)
     figures: list[Figure] = []
     for picture in doc.pictures:
@@ -114,7 +116,7 @@ def parse_pdf(path: Path, assets: Path, *, table_cell_matching: bool = True) -> 
     if metadata.venue_type in {"conference", "preprint"}:
         metric.status = "not_applicable"
     return ParsedPaper(
-        parser=f"docling/{version('docling')}+research-s1.2",
+        parser=f"docling/{version('docling')}+research-s3.7.2",
         pages=pages,
         blocks=blocks,
         figures=figures,

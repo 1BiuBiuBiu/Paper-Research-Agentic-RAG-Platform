@@ -4,18 +4,9 @@ import re
 from html import escape
 from typing import Any
 
-CAPTION = re.compile(r"^(?:Fig(?:ure)?\.?|Table|图|表)\s*\d", re.I)
+from app.parsing.headings import CAPTION, heading_depth  # noqa: F401
+
 EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[a-z]{2,}", re.I)
-
-
-def heading_depth(block: dict[str, Any]) -> int | None:
-    if block["kind"] != "section_header" or CAPTION.match(block["text"]):
-        return None
-    # Some engines give every numbered heading level=1. Retain the printed hierarchy.
-    number = re.match(r"^(\d+(?:\.\d+)*)(?:[.\s]|$)", block["text"])
-    if number:
-        return min(4, len(number.group(1).split(".")))
-    return max(1, min(4, block.get("heading_level") or 1))
 
 
 def page_elements(paper: dict[str, Any], page: int) -> list[dict[str, Any]]:

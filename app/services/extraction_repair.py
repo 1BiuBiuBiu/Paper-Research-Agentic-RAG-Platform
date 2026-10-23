@@ -9,6 +9,7 @@ from app.metadata.extract import extract_metadata
 from app.parsing.cleaning import clean_blocks
 from app.parsing.figures import associate_figures
 from app.parsing.front_matter import repair_front_matter
+from app.parsing.headings import normalize_headings
 from app.parsing.table_captions import associate_table_captions
 from app.repositories.papers import PaperRepository
 
@@ -17,6 +18,7 @@ def repaired_paper(paper: ParsedPaper) -> ParsedPaper:
     result = paper.model_copy(deep=True)
     clean_blocks(result.blocks, result.pages)
     repair_front_matter(result.blocks, result.pages)
+    normalize_headings(result.blocks)
     metadata = extract_metadata(result.blocks)
     for field, source in result.metadata.provenance.items():
         if source.source == "manual":
@@ -34,7 +36,7 @@ def repaired_paper(paper: ParsedPaper) -> ParsedPaper:
     associate_figures(result.figures, result.blocks)
     associate_table_captions(result.tables, result.blocks)
     # A rules refresh must not claim an old parse has new table/structure extraction.
-    result.parser = result.parser.split("+rules-")[0] + "+rules-s1.2"
+    result.parser = result.parser.split("+rules-")[0] + "+rules-s3.7.2"
     return result
 
 
