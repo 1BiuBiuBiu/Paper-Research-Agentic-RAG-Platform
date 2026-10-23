@@ -76,15 +76,27 @@ def _variant(text: str) -> str:
     return ""
 
 
-def row_labels(table: PaperTable) -> dict[int, str]:
-    """Rebuild row labels, repairing a variant cell that Docling merged into the row above.
+def _inherit_ok(text: str) -> bool:
+    """Only a bare variant ("WisdoM", "Average") can inherit; a variant carrying a model name
+    ("WisdoM MMICL [57]*") already identifies itself and must not take the row above."""
+    return (
+        bool(text)
+        and len(text) <= 20
+        and "[" not in text
+        and not any(character.isdigit() for character in text)
+    )
 
-    Layouts like "Model | -w/ WisdoM" parse as row N = "-w/ WisdoM Model" and row N+1 =
-    "-w/ WisdoM", which makes the baseline row look like the enhanced one. When a label
-    starts with the next row's whole label and that label is a variant, the model name is
-    moved back to its own row and the variant is re-attached as "Model / variant".
+
+def row_labels(table: PaperTable) -> dict[int, str]:
+    """Rebuild row labels so a variant row always names its model.
+
+    Two Docling layouts are repaired:
+    1. "Model | -w/ WisdoM" parsed as row N = "-w/ WisdoM Model" and row N+1 = "-w/ WisdoM":
+       the model moves back to row N and row N+1 becomes "Model / variant".
+    2. Variant rows that lost the model name inherit the last model row above them, which
+       otherwise leaves several identical "-w/ WisdoM" rows for different backbones.
     """
-    labels: dict[int, str] = {}
+    raw: dict[int, str] = {}
     for row in range(table.rows):
         cells = sorted(
             (
@@ -95,14 +107,30 @@ def row_labels(table: PaperTable) -> dict[int, str]:
             key=lambda cell: cell.col_start,
         )
         if cells:
-            labels[row] = cells[0].text.strip()
-    for row in sorted(labels)[:-1]:
-        current, following = labels[row], labels.get(row + 1, "")
+            raw[row] = cells[0].text.strip()
+    shifted: set[int] = set()
+    for row in sorted(raw)[:-1]:
+        current, following = raw[row], raw.get(row + 1, "")
         if following and _variant(following) and current.startswith(following):
             remainder = current[len(following) :].strip(" -–—/")
             if remainder:
-                labels[row] = remainder
-                labels[row + 1] = f"{remainder} / {following}"
+                raw[row] = remainder
+                raw[row + 1] = f"{remainder} / {following}"
+                shifted.add(row + 1)
+    labels: dict[int, str] = {}
+    parent = ""
+    for row in sorted(raw):
+        label = raw[row]
+        if row in shifted:
+            labels[row] = label
+            continue
+        remainder = _variant(label)
+        if remainder and _inherit_ok(remainder):
+            labels[row] = f"{parent} / {label}" if parent else label
+        else:
+            labels[row] = label
+            if not remainder:
+                parent = label
     return labels
 
 

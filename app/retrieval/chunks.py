@@ -8,7 +8,7 @@ from app.parsing.table_data import row_evidence
 
 CHUNK_SIZE = 700
 OVERLAP = 100
-CHUNK_VERSION = "research-chunks-v3"
+CHUNK_VERSION = "research-chunks-v4"
 
 
 def table_section(table: PaperTable, blocks: list[Block]) -> str:

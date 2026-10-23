@@ -105,3 +105,43 @@ def test_chunks_carry_section_and_untruncated_caption(settings):
     rows = [chunk for chunk in build_chunks(document) if chunk.element_type == "table"]
     assert rows and all("4.5 Ablation Study" in row.text for row in rows)
     assert all(caption in row.text for row in rows)
+
+
+def variant_only_table() -> PaperTable:
+    """A backbone row followed by bare variant rows, as Docling parses the WisdoM tables."""
+    cells = [
+        cell("Method", 0, 0, header=True),
+        cell("Mac-F1", 0, 1, header=True),
+        cell("AoM", 1, 0),
+        cell("75.2", 1, 1),
+        cell("-w/ Average", 2, 0),
+        cell("70.7", 2, 1),
+        cell("-w/ CF", 3, 0),
+        cell("78.1", 3, 1),
+        cell("Qwen-VL [3]*", 4, 0),
+        cell("89.4", 4, 1),
+        cell("-w/ WisdoM", 5, 0),
+        cell("91.8", 5, 1),
+    ]
+    return PaperTable(
+        id="t2",
+        source_ref="#/tables/1",
+        page=1,
+        bbox=Box(left=0, top=0, right=10, bottom=10),
+        rows=6,
+        columns=2,
+        label="Table 7",
+        caption="Table 7: Fusion strategies.",
+        cells=cells,
+    )
+
+
+def test_variant_only_rows_inherit_the_last_model_row():
+    rows = row_evidence(variant_only_table())
+    average = next(row for row in rows if "70.7" in row)
+    fusion = next(row for row in rows if "78.1" in row)
+    wisdom = next(row for row in rows if "91.8" in row)
+    assert "Method = AoM / -w/ Average;" in average
+    assert "Method = AoM / -w/ CF;" in fusion
+    assert "Method = Qwen-VL [3]* / -w/ WisdoM;" in wisdom
+    assert "AoM / -w/ Average / -w/ CF" not in fusion
