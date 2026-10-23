@@ -7,6 +7,7 @@ import pytest
 from app.core.errors import AppError
 from app.domain.agent_flow import WebEvidence
 from app.domain.qa import Completion, Evidence, ModelAnswer, TokenUsage
+from app.services.agent_messages import context, messages
 from app.services.corrective_agent import CorrectiveAgent
 from tests.qa_helpers import RecordingReranker
 
@@ -351,3 +352,25 @@ def test_english_question_skips_translation_call():
     assert all(s.node != "translate_query" for s in state["trace"])
     assert reranker.questions == ["What is Acc2 at 0.1 and 0.7?"]
     assert agent.calls == 2 and len(provider.calls) == 2
+
+
+def test_content_budget_keeps_the_configured_value_for_short_turns():
+    agent = CorrectiveAgent(Scripted(), RecordingReranker(), Search(), "flash", 50000)
+    assert agent.content_budget("What is Acc2?", [], False) == 50000
+
+
+def test_content_budget_shrinks_a_full_turn_under_the_provider_cap():
+    history = [
+        {"request": {"question": "问" * 400}, "response": {"answer": "答" * 800}} for _ in range(6)
+    ]
+    question = "问" * 2000
+    agent = CorrectiveAgent(Scripted(), RecordingReranker(), Search(), "flash", 50000)
+    budget = agent.content_budget(question, history, False)
+    assert budget < 50000
+    items = [row(f"c{index}", "甲" * 1200, "E1") for index in range(20)]
+    packed, local, _ = context(items, [], [], budget)
+    payload = json.dumps(
+        {"model": "deepseek-flash", "messages": messages(question, packed, history, False)},
+        ensure_ascii=False,
+    ).encode()
+    assert local and len(payload) < 65536

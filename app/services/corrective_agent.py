@@ -28,6 +28,9 @@ TABLE_REF = re.compile(
     r"(?i)(?:table|tab\.|figure|fig\.|eq\.|equation)\s*\d+[a-z]?|表\s*\d+|图\s*\d+"
 )
 MAX_POINTS = 6
+# The provider rejects requests above 65,536 bytes; leave a margin for JSON framing.
+REQUEST_SAFE_BYTES = 64_000
+COVERAGE_RESERVE = 2_000
 
 TRANSLATE_PROMPT = (
     "[stage:translate] 把用户问题翻译成英文检索式，供英文交叉编码器精排使用。"
@@ -154,6 +157,22 @@ class CorrectiveAgent:
     def check(self) -> None:
         if time.monotonic() >= self.deadline:
             raise AppError("agent_timeout", "本轮 Agent 已达到总时间边界，请缩小范围后重试。", 504)
+
+    def content_budget(self, question: str, history: list[dict], chat: bool) -> int:
+        """Evidence budget left after the request's non-evidence bytes.
+
+        A large `context_bytes` alone can push the request past the provider's 65,536-byte
+        cap once history and a long question are added, so the evidence budget is the
+        configured value minus what the rest of the request already occupies.
+        """
+        probe = messages(
+            question,
+            {"paper_overview": [], "evidence": [], "web_evidence": []},
+            history,
+            chat,
+        )
+        overhead = len(json.dumps(probe, ensure_ascii=False).encode())
+        return max(2000, min(self.budget, REQUEST_SAFE_BYTES - overhead - COVERAGE_RESERVE))
 
     def call(self, prompt: str, payload: dict, *, counted: bool = True) -> Completion:
         """One model call. `counted=False` is only for the reranker-only translation."""
@@ -388,7 +407,9 @@ class CorrectiveAgent:
                 item.model_copy(update={"source_id": f"E{index + 1}"})
                 for index, item in enumerate(ledger)
             ]
-            packed, local, web = context(numbered, s["web"], overviews, self.budget)
+            packed, local, web = context(
+                numbered, s["web"], overviews, self.content_budget(question, history, chat)
+            )
             if not local and not web and not chat:
                 return {
                     **self.event(s, "generate", reason="no_evidence"),

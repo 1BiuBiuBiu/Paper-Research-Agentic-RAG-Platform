@@ -15,7 +15,7 @@ class Settings:
     deepseek_base_url: str = "https://api.deepseek.com"
     model_timeout: int = 90
     max_output_tokens: int = 2048
-    context_bytes: int = 24000
+    context_bytes: int = 50000
     embedding_model: str = "BAAI/bge-m3"
     embedding_revision: str = "5617a9f61b028005a4858fdac845db406aefb181"
     index_timeout: int = 600
@@ -53,7 +53,7 @@ class Settings:
             deepseek_base_url=value("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             model_timeout=int(value("DEEPSEEK_TIMEOUT", "90")),
             max_output_tokens=int(value("DEEPSEEK_MAX_OUTPUT_TOKENS", "2048")),
-            context_bytes=int(value("RESEARCH_CONTEXT_BYTES", "24000")),
+            context_bytes=int(value("RESEARCH_CONTEXT_BYTES", "50000")),
             embedding_revision=value(
                 "RESEARCH_EMBEDDING_REVISION", "5617a9f61b028005a4858fdac845db406aefb181"
             ),
