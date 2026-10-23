@@ -70,3 +70,17 @@ Citation Precision 汇总全部引用（micro），无引用返回 null；Scope 
 
 建议问题覆盖实验数值、方法比较、消融、超参数、表格、图趋势、无答案及相似论文干扰。
 查询改写、联网、调用次数和耗时可留在单独运行记录，不作为本次六项主指标。
+
+## 多文件 pilot 真实采集
+
+`structure_gold.jsonl / rag_questions.jsonl / dataset_summary.json` 与两篇 PDF 位于 datasets。
+`uv run python -m evaluation.collect_pilot` 核验 PDF 指纹，使用实际解析、索引和精排模块；
+`uv run python -m evaluation.pilot_headings` 按同文档同页一对一匹配，阈值冻结为 0.90。
+真实数据本次所有匹配均为规范化后完全相同，未使用模糊匹配提高结果。
+标题主口径按提供的协议逐篇 Macro F1，区别于通用评分器的 micro F1；两者均留存。
+`uv run python -m evaluation.collect_answers` **仅在允许发送论文片段和计费 API 调用后运行**，
+本轮已由用户显式授权；只用 DeepSeek Flash，联网强制关闭，最多 8 题，每题沿用生产流程的调用边界。
+该脚本保存每题结果，重跑跳过已有记录（包括失败），不自动重复计费。
+结果固定保存在 `output/evaluation/pilot-2026-10-23/`，不混入数据库和论文库。
+最终检索结果取最后一轮 LLM 过滤后序列，另保留第一轮过滤前 Top5，不能混用。
+数据协议中金标准穷尽与人工二审尚未完成；本轮模型辅助审校只作试评估，不能称为人工终审。
