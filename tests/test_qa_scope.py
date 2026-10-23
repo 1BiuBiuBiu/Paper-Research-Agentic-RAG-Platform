@@ -147,11 +147,17 @@ def test_unrelated_question_refuses_after_bounded_correction_and_scoped_context_
             client.app.state.repository, "Aurora observed optical emissions and no other phenomena."
         )
         client.post(f"/documents/{a.id}/index")
+        # The recalled chunk stays available to generation, so the refusal comes from the answer.
+        provider.result = ModelAnswer(
+            answer="本轮证据只涉及 Aurora，无法回答 Nebula。",
+            citations=[],
+            insufficient_evidence=True,
+        )
         response = client.post("/query", json=question(a.id, text="Nebula"))
         assert response.status_code == 200 and response.json()["insufficient_evidence"]
-        # Grade ① rejects the only chunk; the one targeted re-retrieval finds nothing new, so
-        # the bounded turn refuses without spending a generation call.
-        assert len(provider.calls) == 1 and not response.json()["sources"]
+        # Grade ① rejects the chunk, the one targeted re-retrieval finds nothing new, and the
+        # bounded turn still generates from the judged candidate: two counted calls, no web.
+        assert len(provider.calls) == 2 and not response.json()["sources"]
         assert response.json()["rewrite_count"] == 1
         response = client.post("/query", json=question(a.id, text="Aurora"))
         assert response.status_code == 200 and response.json()["context_bytes"] <= 1000

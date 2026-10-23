@@ -90,7 +90,7 @@ def validate_citations(answer: ModelAnswer, allowed: set[str], evidence_required
             raise AppError("invalid_citations", "模型引用格式无效。", 502)
         references.update(re.findall(r"[EW]\d+", marker))
     declared = set(answer.citations)
-    if not declared <= allowed or references != declared:
+    if not declared <= allowed or not references <= declared:
         raise AppError("invalid_citations", "回答引用不属于本轮实际输入的证据。", 502)
     if evidence_required and not answer.insufficient_evidence and not declared:
         raise AppError("missing_citations", "回答缺少有效证据引用。", 502)

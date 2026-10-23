@@ -1424,7 +1424,7 @@ wheels = [
 
 [[package]]
 name = "research-agentic-rag-platform"
-version = "0.13.4"
+version = "0.13.5"
 source = { virtual = "." }
 dependencies = [
     { name = "docling", marker = "sys_platform == 'win32'" },

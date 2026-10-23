@@ -34,7 +34,7 @@ class Scripted:
             result = ModelAnswer(
                 answer="判分结论",
                 citations=ids,
-                insufficient_evidence=not ids,
+                insufficient_evidence=spec.get("insufficient", not ids),
                 sufficient=spec.get("sufficient", bool(ids)),
                 covered=list(spec.get("covered", [])),
                 missing=list(spec.get("missing", [])),
@@ -92,8 +92,8 @@ def row(identifier: str, text: str, source_id: str, document_id: str = "doc") ->
 def execute(
     provider, web, *, allow_web=True, chat=False, first=None, second=None, question="original"
 ):
-    first = first or [row("chunk", "REJECTED_LOCAL_TEXT", "E1")]
-    second = second or [row("chunk2", "SECOND_ROUND_TEXT", "E1")]
+    first = [row("chunk", "REJECTED_LOCAL_TEXT", "E1")] if first is None else first
+    second = [row("chunk2", "SECOND_ROUND_TEXT", "E1")] if second is None else second
     queries = []
 
     def retrieve(query):
@@ -196,17 +196,13 @@ def test_missing_points_cannot_invent_numbers_or_table_references():
 
 
 def test_repeated_follow_up_query_never_retrieves_again():
-    provider = Scripted(
-        [{"citations": [], "missing": ["要点"], "next_query": "original"}], citation="W1"
-    )
+    provider = Scripted([{"citations": [], "missing": ["要点"], "next_query": "original"}])
     agent, state, queries = execute(provider, Search())
     assert queries == ["original"]
-    assert agent.calls == 2  # grade ① and generation, no second grade
+    assert agent.calls == 2  # grade ① and generation, no second retrieval or grade
     assert state["next_query"] == ""
-    assert state["ledger"] == []
-    assert state["web_used"] and state["web_status"] == "available"
-    final = payload_of(provider.calls[-1])
-    assert final["context"]["evidence"] == [] and "W1" in json.dumps(final)
+    # The judged candidate is still available to generation; the judge only named the gap.
+    assert [e.id for e in state["ledger"]] == ["chunk"]
 
 
 def test_no_new_evidence_skips_the_second_grade():
@@ -223,8 +219,8 @@ def test_no_new_evidence_skips_the_second_grade():
 
 def test_refusal_without_evidence_does_not_spend_a_generation_call():
     provider = Scripted([{"citations": [], "missing": ["要点"]}])
-    agent, state, _ = execute(provider, Search(), allow_web=False)
-    assert state["completion"] is None and agent.calls == 1
+    agent, state, _ = execute(provider, Search(), allow_web=False, first=[])
+    assert state["completion"] is None and agent.calls == 0
     assert state["web_status"] == "disabled"
 
 
@@ -244,15 +240,15 @@ def test_missing_web_never_generates_without_evidence(mode, status):
     if mode == "empty":
         web.search = lambda query: []
     provider = Scripted([{"citations": [], "missing": ["要点"]}])
-    agent, state, _ = execute(provider, web, allow_web=mode != "disabled")
-    assert state["completion"] is None and agent.calls == 1
+    agent, state, _ = execute(provider, web, allow_web=mode != "disabled", first=[])
+    assert state["completion"] is None and agent.calls == 0
     assert state["web_status"] == status
 
 
 def test_unknown_web_citation_is_rejected():
     provider = Scripted([{"citations": [], "missing": ["要点"]}], citation="W99")
     with pytest.raises(AppError, match="引用"):
-        execute(provider, Search())
+        execute(provider, Search(), first=[])
 
 
 def test_chat_never_retrieves_or_searches():
@@ -282,7 +278,7 @@ def test_sufficient_verdict_requires_supporting_evidence():
         execute(provider, Search())
 
 
-def test_ledger_keeps_first_round_when_second_round_finds_nothing_new():
+def test_every_judged_candidate_reaches_generation_even_when_the_judge_cites_none():
     provider = Scripted(
         [
             {"citations": ["E1"], "missing": ["要点"], "next_query": "other material"},
@@ -291,10 +287,23 @@ def test_ledger_keeps_first_round_when_second_round_finds_nothing_new():
     )
     agent, state, queries = execute(provider, Search())
     assert queries == ["original", "other material"] and agent.calls == 3
-    assert {e.id for e in state["ledger"]} == {"chunk"}
+    # Round 2's judged candidates are kept even though the judge cited nothing there.
+    assert {e.id for e in state["ledger"]} == {"chunk", "chunk2"}
     final = payload_of(provider.calls[-1])
     assert "REJECTED_LOCAL_TEXT" in json.dumps(final)
-    assert "SECOND_ROUND_TEXT" not in json.dumps(final)
+    assert "SECOND_ROUND_TEXT" in json.dumps(final)
+
+
+def test_a_single_citation_does_not_narrow_the_generation_evidence():
+    first = [
+        row("chunk", "PRIMARY_VALUE_92.1", "E1"),
+        row("chunk-b", "BASELINE_VALUE_75.2", "E2"),
+    ]
+    provider = Scripted([{"citations": ["E1"], "sufficient": True}])
+    agent, state, _ = execute(provider, Search(), first=first)
+    assert {e.id for e in state["ledger"]} == {"chunk", "chunk-b"}
+    final = json.dumps(payload_of(provider.calls[-1]), ensure_ascii=False)
+    assert "PRIMARY_VALUE_92.1" in final and "BASELINE_VALUE_75.2" in final
 
 
 def run_question(question, provider):
@@ -344,6 +353,38 @@ def test_translation_losing_numbers_falls_back_to_original_query():
     reasons = [s.reason for s in state["trace"] if s.node == "translate_query"]
     assert reasons == ["numbers_lost"]
     assert agent.calls == 2 and len(provider.calls) == 3
+
+
+def test_grading_may_cite_support_and_still_call_the_round_insufficient():
+    provider = Scripted(
+        [
+            {
+                "citations": ["E1"],
+                "insufficient": True,
+                "sufficient": False,
+                "missing": ["第二个要点"],
+                "next_query": "follow up",
+            },
+            {"citations": ["E1"], "sufficient": True},
+        ]
+    )
+    agent, state, queries = execute(provider, Search())
+    assert queries == ["original", "follow up"] and agent.calls == 3
+    # The cited fragment is still accepted into the ledger even though the round fell short.
+    assert {e.id for e in state["ledger"]} == {"chunk", "chunk2"}
+
+
+def test_missing_verdict_falls_back_to_support_and_the_old_flag():
+    provider = Scripted(
+        [
+            {"citations": ["E1"], "insufficient": True, "sufficient": None, "next_query": "more"},
+            {"citations": ["E1"], "sufficient": True},
+        ]
+    )
+    agent, state, queries = execute(provider, Search())
+    assert queries == ["original", "more"] and agent.calls == 3
+    reasons = [step.reason for step in state["trace"] if step.node == "grade_documents"]
+    assert reasons[0].startswith("判分：缺") and "定向补检" in reasons[0]
 
 
 def test_english_question_skips_translation_call():
