@@ -33,10 +33,9 @@ Heading F1 使用汇总 TP/FP/FN 的 micro F1。Level Accuracy 仅在 TP 上计�
 ## retrieval 数组
 
 每个问题字段：`question_id, question, evidence_complete, gold_evidence, retrieved_evidence, ideal_relevances`。
-采集**原始问题第一轮 Cross-Encoder 精排后、LLM 过滤前**的 Top 5；保持原顺序，不混入改写轮或网页结果。
-每轮最多 20 候选；本评分器不改变现有检索链路。
-
-注：当前实现每轮精排 10 条（`RESEARCH_RERANK_TOP_N`），两轮并集进账本；评分器仍按本协议的 @5 计分。需要 @10 的正式字段时，要先把 `Retrieved.rank`、`ideal_relevances` 的 k 参数化（评分器、schema、测试一起改），见 [S3.10 六项指标](../references/S3.10六项指标.md) 里“协议 @5 与实现 @10”的对照。
+采集**原始问题第一轮 Cross-Encoder 精排后、LLM 过滤前**的前 `top_k` 条；保持原顺序，不混入改写轮或网页结果。
+`top_k` 是 Dataset 级字段（默认 5，当前实现用 10；1..20），`Retrieved.rank` 与 `retrieved_evidence` 长度不得超过它；
+报告键为 `recall_at_k` / `hit_at_k` / `ndcg_at_k`，并附 `k`。本轮实现窗口的 @10 与两轮并集 @20 结果见 [S3.10 六项指标](../references/S3.10六项指标.md)。
 
 gold_evidence 每项包含 `evidence_id, document_id, page, element_type, table_label（可省略）,
 evidence_text, relevance`。relevance=2 表示直接答案证据，1 表示相关不足；evidence_id 由标注者稳定分配。
@@ -47,8 +46,8 @@ rank 必须连续从 1 开始，最多 5；source_id 不重复；匹配金标准
 不依赖字符串相等或系统引用 ID，相同证据被多个块命中只计一次。
 `matched_gold_ids` 为该块实际覆盖的金标准 ID，未命中填 []；相关性必须人工填 0/1/2。
 
-evidence_complete=true 才进入 Recall@5（命中直接证据数 / 全部直接证据数）；
-false 只进入 Hit@5（至少命中一条直接证据）。分别报告问题数，不能混合成 Recall。
+evidence_complete=true 才进入 Recall@k（命中直接证据数 / 全部直接证据数）；
+false 只进入 Hit@k（至少命中一条直接证据）。分别报告问题数，不能混合成 Recall。
 必须有直接证据才能进入上述分母；无答案题单列数量，并进入最终回答评估。
 
 ideal_relevances 是完整人工相关性池的评分列表，至少包含所有金标准及本轮结果的相关证据；

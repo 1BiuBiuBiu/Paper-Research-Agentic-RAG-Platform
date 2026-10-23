@@ -39,7 +39,7 @@ class GoldEvidence(Record):
 
 
 class Retrieved(Record):
-    rank: int = Field(ge=1, le=5)
+    rank: int = Field(ge=1, le=20)
     source_id: str
     relevance: int = Field(ge=0, le=2)
     matched_gold_ids: list[str]
@@ -50,7 +50,7 @@ class Retrieval(Record):
     question: str
     evidence_complete: bool
     gold_evidence: list[GoldEvidence]
-    retrieved_evidence: list[Retrieved] = Field(max_length=5)
+    retrieved_evidence: list[Retrieved] = Field(max_length=20)
     ideal_relevances: list[int]
 
     @model_validator(mode="after")
@@ -100,6 +100,8 @@ class Dataset(Record):
     run_id: str = Field(min_length=1)
     provenance: dict[str, str] = Field(min_length=1)
     heading_candidates_complete: bool
+    # Retrieval window: defaults to the historical @5, set 10 for the current rerank_top_n.
+    top_k: int = Field(default=5, ge=1, le=20)
     headings: list[Heading]
     retrieval: list[Retrieval]
     answers: list[Answer]
@@ -114,6 +116,11 @@ class Dataset(Record):
             ids = [r.question_id for r in rows]
             if len(ids) != len(set(ids)):
                 raise ValueError("duplicate question ID")
+        for row in self.retrieval:
+            if len(row.retrieved_evidence) > self.top_k:
+                raise ValueError("retrieved evidence exceeds the evaluation window top_k")
+            if any(item.rank > self.top_k for item in row.retrieved_evidence):
+                raise ValueError("retrieved rank exceeds the evaluation window top_k")
         keys = [(h.document_id, h.page, h.text) for h in self.headings]
         if len(keys) != len(set(keys)):
             raise ValueError("duplicate heading candidate")
@@ -124,11 +131,12 @@ def ratio(n: float, d: float) -> float | None:
     return n / d if d else None
 
 
-def dcg(grades: list[int]) -> float:
-    return sum((2**g - 1) / log2(i + 2) for i, g in enumerate(grades[:5]))
+def dcg(grades: list[int], k: int = 5) -> float:
+    return sum((2**g - 1) / log2(i + 2) for i, g in enumerate(grades[:k]))
 
 
 def score(data: Dataset) -> dict:
+    k = data.top_k
     h = data.headings
     tp = sum(r.is_real_section_heading and r.predicted_heading for r in h)
     fp = sum(not r.is_real_section_heading and r.predicted_heading for r in h)
@@ -142,9 +150,9 @@ def score(data: Dataset) -> dict:
                 recall.append(len(found) / len(direct))
             else:
                 hits.append(float(bool(found)))
-        ideal = dcg(sorted(row.ideal_relevances, reverse=True))
+        ideal = dcg(sorted(row.ideal_relevances, reverse=True), k)
         if ideal:
-            ndcg.append(dcg([r.relevance for r in row.retrieved_evidence]) / ideal)
+            ndcg.append(dcg([r.relevance for r in row.retrieved_evidence], k) / ideal)
     a = data.answers
     successes = [
         r.answer_correct
@@ -174,11 +182,12 @@ def score(data: Dataset) -> dict:
             "candidates": len(h),
         },
         "retrieval": {
-            "recall_at_5": ratio(sum(recall), len(recall)),
+            "k": k,
+            "recall_at_k": ratio(sum(recall), len(recall)),
             "recall_questions": len(recall),
-            "hit_at_5": ratio(sum(hits), len(hits)),
+            "hit_at_k": ratio(sum(hits), len(hits)),
             "hit_questions": len(hits),
-            "ndcg_at_5": ratio(sum(ndcg), len(ndcg)),
+            "ndcg_at_k": ratio(sum(ndcg), len(ndcg)),
             "ndcg_questions": len(ndcg),
             "zero_direct_gold_questions": sum(
                 not any(e.relevance == 2 for e in r.gold_evidence) for r in data.retrieval

@@ -69,12 +69,38 @@ def retrieval(complete=True):
 
 def test_recall_deduplicates_and_hit_is_separate():
     result = score(base(retrieval=[retrieval()]))["retrieval"]
-    assert result["recall_at_5"] == pytest.approx(2 / 3)
-    assert result["hit_at_5"] is None
-    assert 0 < result["ndcg_at_5"] < 1
+    assert result["k"] == 5
+    assert result["recall_at_k"] == pytest.approx(2 / 3)
+    assert result["hit_at_k"] is None
+    assert 0 < result["ndcg_at_k"] < 1
     result = score(base(retrieval=[retrieval(False)]))["retrieval"]
-    assert result["hit_at_5"] == 1
-    assert result["recall_at_5"] is None
+    assert result["hit_at_k"] == 1
+    assert result["recall_at_k"] is None
+
+
+def test_top_k_window_covers_ten_rows_and_rejects_more():
+    row = retrieval()
+    row["retrieved_evidence"] = [
+        dict(
+            rank=index,
+            source_id=f"s{index}",
+            relevance=2 if index == 10 else 0,
+            matched_gold_ids=["2"] if index == 10 else [],
+        )
+        for index in range(1, 11)
+    ]
+    row["ideal_relevances"] = [2, 2, 2]
+    result = score(base(retrieval=[row], top_k=10))["retrieval"]
+    assert result["k"] == 10
+    assert result["recall_at_k"] == pytest.approx(1 / 3)
+    assert 0 < result["ndcg_at_k"] <= 1
+    row["retrieved_evidence"].append(
+        dict(rank=11, source_id="s11", relevance=0, matched_gold_ids=[])
+    )
+    with pytest.raises(ValidationError):
+        base(retrieval=[row], top_k=10)
+    with pytest.raises(ValidationError):
+        base(retrieval=[retrieval()], top_k=0)
 
 
 def test_reject_unknown_match_and_missing_annotations():

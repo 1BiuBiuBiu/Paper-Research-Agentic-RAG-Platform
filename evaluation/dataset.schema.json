@@ -229,7 +229,7 @@
           "items": {
             "$ref": "#/$defs/Retrieved"
           },
-          "maxItems": 5,
+          "maxItems": 20,
           "title": "Retrieved Evidence",
           "type": "array"
         },
@@ -256,7 +256,7 @@
       "additionalProperties": false,
       "properties": {
         "rank": {
-          "maximum": 5,
+          "maximum": 20,
           "minimum": 1,
           "title": "Rank",
           "type": "integer"
@@ -307,6 +307,13 @@
     "heading_candidates_complete": {
       "title": "Heading Candidates Complete",
       "type": "boolean"
+    },
+    "top_k": {
+      "default": 5,
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Top K",
+      "type": "integer"
     },
     "headings": {
       "items": {
