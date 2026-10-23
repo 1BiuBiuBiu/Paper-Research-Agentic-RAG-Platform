@@ -61,7 +61,7 @@ def create_app(
             application.state.indexing.resume_pending()
         yield
 
-    application = FastAPI(title="Research Paper RAG", version="0.13.0", lifespan=lifespan)
+    application = FastAPI(title="Research Paper RAG", version="0.13.1", lifespan=lifespan)
     application.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
@@ -162,7 +162,7 @@ def create_app(
     def health() -> dict:
         return {
             "status": "ok",
-            "version": "0.13.0",
+            "version": "0.13.1",
             "slice": "S3.10",
             "parser": "docling",
             "rag_enabled": True,

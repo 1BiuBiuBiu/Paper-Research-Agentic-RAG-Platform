@@ -2,6 +2,13 @@
 
 每个已验证切片记录问题、变更、验证和本地 Git 提交；提交只含本次范围。运行论文、密钥、备份和截图不进入 Git，未经指示不推送远程。
 
+## 0.13.1 · S3.10 精排保留条数 12→10 · 2026-10-23
+
+- 用户要求减少 token。新增 `evaluation/measure_top_n.py`：用已记录的英文精排问句（不调用 LLM）重跑 25 题，统计每个 k 的金标准覆盖与判分证据字节。
+- 测量：k=10 时金标准“至少一条/全部”均 **22/22**，判分证据字节均值 4,771（12 条为 5,782，**−17.5%**）；k=8 为 21/22（丢 `ADD-PS-001`，其金标准在 rank 10）且 −34%；k=6 为 20/22；k=4 为 19/22。
+- 默认 `RESEARCH_RERANK_TOP_N` 12→10，其余调用次数、判分语义、账本与检索均不变；想要更省可改 8（知道会丢一题召回）。顺带修正 README 环境变量示例（移除已删除的每篇深度、调用上限改 3、补缓存与自动建索引开关）。
+- 未调用付费服务；`pytest` **246 passed / 4 skipped**、ruff、mypy、compileall、uv lock、uv pip check 通过。新增 `tests/test_settings_defaults.py` 钉住 60／10／3 三个数字。见 [S3.10 验收](references/S3.10验收记录.md) 第 4.1 节。
+
 ## 0.13.0 · S3.10 · 2026-10-23
 
 - 解析成功即排队建索引：`POST /documents` 立即返回“解析完成”，`IndexService.queue_build` 在后台单线程依次写 `dense.faiss` 与 `bm25.json`，页面显示“索引中”。索引失败写入新的 `document_index_failures`（schema v6，只增表），与解析失败分开，可单独重试；`POST /documents/{id}/index` 仍是同步的手动建立／重试入口。

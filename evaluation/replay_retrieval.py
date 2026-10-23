@@ -2,7 +2,8 @@
 
 Only local models run here: the dense encoder, the BM25 statistics and the cross-encoder.
 No LLM provider, web search or paid service is called, so this measures how much of the
-gold evidence reaches the fused pool and the reranked top 12 before any answer is generated.
+gold evidence reaches the fused pool and the reranked window (`rerank_top_n`) before any
+answer is generated.
 
 Usage:
     uv run python -m evaluation.replay_retrieval \

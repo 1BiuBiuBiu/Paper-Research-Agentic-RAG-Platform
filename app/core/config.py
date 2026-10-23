@@ -26,7 +26,7 @@ class Settings:
     reranker_timeout: int = 120
     # One library over the selected papers: dense top-k and BM25 top-k, then fusion.
     candidates: int = 60
-    rerank_top_n: int = 12
+    rerank_top_n: int = 10
     agent_timeout: int = 600
     # Counted calls per turn: grade ①, grade ② (only if needed) and generation.
     # The one-off translation used only for reranking is not counted.
@@ -60,7 +60,7 @@ class Settings:
             index_timeout=int(value("RESEARCH_INDEX_TIMEOUT", "600")),
             auto_index=value("RESEARCH_AUTO_INDEX", "1") not in {"0", "false", "no"},
             candidates=int(value("RESEARCH_CANDIDATES", "60")),
-            rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "12")),
+            rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "10")),
             agent_max_calls=int(value("RESEARCH_AGENT_MAX_CALLS", "3")),
             index_cache_mb=int(value("RESEARCH_INDEX_CACHE_MB", "300")),
             index_cache_entries=int(value("RESEARCH_INDEX_CACHE_ENTRIES", "8")),

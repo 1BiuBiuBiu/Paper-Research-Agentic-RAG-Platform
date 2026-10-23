@@ -68,9 +68,7 @@ class AgentAnswerService:
             fresh = self.scopes.resolve(request.scope)
             if [d.id for d in fresh] != [d.id for d in documents]:
                 raise AppError("scope_changed", "回答期间文件夹成员变化，请重新提问。", 409)
-            if any(
-                not self.indices.usable(d, m) for d, m in zip(fresh, manifests, strict=True)
-            ):
+            if any(not self.indices.usable(d, m) for d, m in zip(fresh, manifests, strict=True)):
                 raise AppError("document_changed", "回答期间文献发生变化，请更新索引。", 409)
 
         def search(question: str) -> list[Evidence]:
