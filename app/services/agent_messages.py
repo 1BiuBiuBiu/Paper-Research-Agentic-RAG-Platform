@@ -91,7 +91,14 @@ def validate_citations(answer: ModelAnswer, allowed: set[str], evidence_required
         references.update(re.findall(r"[EW]\d+", marker))
     declared = set(answer.citations)
     if not declared <= allowed or not references <= declared:
-        raise AppError("invalid_citations", "回答引用不属于本轮实际输入的证据。", 502)
+        unknown = sorted(declared - allowed)
+        undeclared = sorted(references - declared)
+        detail = "回答引用不属于本轮实际输入的证据。"
+        if unknown:
+            detail += f"未提供的编号：{', '.join(unknown)}。"
+        if undeclared:
+            detail += f"正文使用但未声明的编号：{', '.join(undeclared)}。"
+        raise AppError("invalid_citations", detail, 502)
     if evidence_required and not answer.insufficient_evidence and not declared:
         raise AppError("missing_citations", "回答缺少有效证据引用。", 502)
     return declared
