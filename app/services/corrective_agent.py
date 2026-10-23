@@ -390,7 +390,8 @@ class CorrectiveAgent:
             )
             if allow_web and self.web.configured:
                 try:
-                    found = self.web.search((s["query"] or question)[:400])
+                    query = (s["next_query"] or question)[:400]
+                    found = self.web.search(query)
                     status = "available" if found else "empty"
                 except AppError:
                     status = "failed"
@@ -472,9 +473,11 @@ class CorrectiveAgent:
                 if s["sufficient"]
                 else "targeted_retrieve"
                 if s["round"] == 0 and s["next_query"]
+                # All targeted rounds are spent and the verdict is still "insufficient":
+                # try the web when it is enabled, instead of only using it as a last
+                # resort when the local ledger happens to be empty. The web node itself
+                # reports disabled/unconfigured/failed and never fails the turn.
                 else "web_search"
-                if not s["ledger"]
-                else "generate"
             ),
         )
         graph.add_edge("targeted_retrieve", "rerank")

@@ -278,6 +278,39 @@ def test_sufficient_verdict_requires_supporting_evidence():
         execute(provider, Search())
 
 
+def test_insufficient_after_the_second_round_searches_the_web():
+    provider = Scripted(
+        [
+            {"citations": [], "missing": ["要点"], "next_query": "gap"},
+            {"citations": [], "missing": ["要点"]},
+        ],
+        citation="W1",
+    )
+    web = Search()
+    agent, state, queries = execute(provider, web)
+    assert queries == ["original", "gap"]
+    assert agent.calls == 3  # grade ① + grade ② + generation
+    assert web.calls == ["original"]  # grade ② has no follow-up, search the question
+    assert state["web_used"] and state["web_status"] == "available"
+    final = payload_of(provider.calls[-1])
+    assert final["context"]["web_evidence"][0]["source_id"] == "W1"
+
+
+def test_web_disabled_after_the_second_round_keeps_the_local_answer():
+    provider = Scripted(
+        [
+            {"citations": [], "missing": ["要点"], "next_query": "gap"},
+            {"citations": [], "missing": ["要点"]},
+        ]
+    )
+    web = Search()
+    agent, state, queries = execute(provider, web, allow_web=False)
+    assert queries == ["original", "gap"]
+    assert web.calls == []
+    assert not state["web_used"] and state["web_status"] == "disabled"
+    assert agent.calls == 3
+
+
 def test_every_judged_candidate_reaches_generation_even_when_the_judge_cites_none():
     provider = Scripted(
         [
