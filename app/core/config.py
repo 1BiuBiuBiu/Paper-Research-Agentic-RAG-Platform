@@ -26,7 +26,7 @@ class Settings:
     per_paper_candidates: int = 20
     # Upper bound for the fused library-level pool that reaches the reranker.
     candidates: int = 60
-    rerank_top_n: int = 10
+    rerank_top_n: int = 12
     agent_timeout: int = 600
     agent_max_calls: int = 7
     tavily_api_key: str = field(default="", repr=False)
@@ -55,7 +55,7 @@ class Settings:
             index_timeout=int(value("RESEARCH_INDEX_TIMEOUT", "600")),
             per_paper_candidates=int(value("RESEARCH_PER_PAPER_CANDIDATES", "20")),
             candidates=int(value("RESEARCH_CANDIDATES", "60")),
-            rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "10")),
+            rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "12")),
             agent_max_calls=int(value("RESEARCH_AGENT_MAX_CALLS", "7")),
             tavily_api_key=value("TAVILY_API_KEY"),
         )

@@ -9,7 +9,7 @@ from app.providers.registry import ModelRegistry
 from app.providers.web_search import TavilySearch, WebSearch
 from app.retrieval.indexing import IndexService
 from app.retrieval.reranking import CrossEncoderReranker, Reranker
-from app.retrieval.search import retrieve
+from app.retrieval.search import fuse, rank_candidates, retrieval_depth
 from app.services.agent_scope import ScopeResolver
 from app.services.corrective_agent import CorrectiveAgent
 from app.services.qa import clip_bytes
@@ -67,43 +67,25 @@ class AgentAnswerService:
         def search(question: str) -> list[Evidence]:
             parts = [question[start : start + 700] for start in range(0, len(question), 600)]
             vectors = self.indices.embedder.encode(parts)
-            depth = self.registry.settings.per_paper_candidates
+            settings = self.registry.settings
+            depth = retrieval_depth(
+                settings.candidates, len(documents), settings.per_paper_candidates
+            )
             candidates = [
                 e
                 for d, m in zip(documents, manifests, strict=True)
-                for e in retrieve(
-                    self.indices,
-                    d,
-                    m,
-                    question,
-                    top_k=depth,
-                    query_vectors=vectors,
-                    post_filter=False,
+                for e in rank_candidates(
+                    self.indices, d, m, question, depth=depth, query_vectors=vectors
                 )
             ]
-            candidates.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
-            # Rank fusion decides the library-level pool, but a small per-paper floor keeps one
-            # strong paper from consuming every slot in a multi-paper scope.
-            selected: list[Evidence] = []
-            taken: set[tuple[str, str]] = set()
-            quota = min(2, self.registry.settings.candidates)
-            per_paper: dict[str, int] = {}
-            for e in candidates:
-                if per_paper.get(e.document_id, 0) >= quota:
-                    continue
-                if len(selected) >= self.registry.settings.candidates:
-                    break
-                per_paper[e.document_id] = per_paper.get(e.document_id, 0) + 1
-                selected.append(e)
-                taken.add((e.document_id, e.id))
-            for e in candidates:
-                if len(selected) >= self.registry.settings.candidates:
-                    break
-                if (e.document_id, e.id) in taken:
-                    continue
-                selected.append(e)
-                taken.add((e.document_id, e.id))
-            selected.sort(key=lambda e: (-e.fusion_score, e.document_id, e.id))
+            # One global rank fusion over every selected document, then a small per-paper floor
+            # so a single strong paper cannot consume the whole library-level pool.
+            selected = fuse(
+                candidates,
+                settings.candidates,
+                floor=2,
+                required_documents=[d.id for d in documents],
+            )
             return [e.model_copy(update={"source_id": f"E{i + 1}"}) for i, e in enumerate(selected)]
 
         overviews = [

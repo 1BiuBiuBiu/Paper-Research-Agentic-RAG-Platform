@@ -69,6 +69,7 @@ class Evidence(Chunk):
     title: str
     filename: str
     score: float
+    bm25_score: float = 0
     fusion_score: float = 0
     rerank_score: float | None = None
 
@@ -82,7 +83,7 @@ class TokenUsage(BaseModel):
 class ModelAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     answer: str = Field(min_length=1, max_length=20000)
-    citations: list[str] = Field(max_length=10)
+    citations: list[str] = Field(max_length=20)
     insufficient_evidence: bool
 
 
