@@ -1,3 +1,5 @@
+import threading
+import time
 from uuid import uuid4
 
 import streamlit as st
@@ -142,11 +144,38 @@ def agent_workspace() -> None:
 
 
 def send_turn(identifier: str, body: dict) -> None:
-    with st.spinner("正在检索并回答…"):
+    """Run the turn in a worker thread and show the steps the API reports while it runs."""
+    request_id = body["request_id"]
+    outcome: dict = {}
+
+    def run() -> None:
         try:
-            api("POST", f"/conversations/{identifier}/turns", json=body, timeout=750)
+            outcome["value"] = api(
+                "POST", f"/conversations/{identifier}/turns", json=body, timeout=750
+            )
         except ClientError as error:
-            st.session_state["agent:last_error"] = str(error)
+            outcome["error"] = str(error)
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    seen = 0
+    with st.status("正在处理本轮…", expanded=True) as status:
+        while worker.is_alive():
+            try:
+                events = api("GET", f"/agent/progress/{request_id}", timeout=10)["events"]
+            except ClientError:
+                events = []
+            for event in events[seen:]:
+                detail = f" · {event['detail']}" if event.get("detail") else ""
+                st.write(f"{event['label']}{detail}")
+            seen = len(events)
+            time.sleep(0.4)
+        worker.join()
+        if "error" in outcome:
+            st.session_state["agent:last_error"] = outcome["error"]
+            status.update(label="本轮失败", state="error")
+        else:
+            status.update(label="本轮完成", state="complete")
     st.rerun()
 
 

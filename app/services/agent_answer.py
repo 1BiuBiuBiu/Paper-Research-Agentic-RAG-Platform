@@ -1,9 +1,11 @@
 import hashlib
 import json
 import time
+from collections.abc import Callable
 
 from app.core.errors import AppError
 from app.domain.agent import AgentResult, AgentTurnInput
+from app.domain.agent_flow import AgentStep
 from app.domain.qa import Evidence
 from app.providers.registry import ModelRegistry
 from app.providers.web_search import TavilySearch, WebSearch
@@ -29,7 +31,12 @@ class AgentAnswerService:
         self.reranker = reranker or CrossEncoderReranker(registry.settings)
         self.web = web or TavilySearch(registry.settings.tavily_api_key)
 
-    def answer(self, request: AgentTurnInput, turns: list[dict]) -> AgentResult:
+    def answer(
+        self,
+        request: AgentTurnInput,
+        turns: list[dict],
+        on_step: Callable[[AgentStep], None] | None = None,
+    ) -> AgentResult:
         started = time.monotonic()
         documents = self.scopes.resolve(request.scope)
         manifests = [self.indices.require(self.indices.document(d.id)) for d in documents]
@@ -111,6 +118,7 @@ class AgentAnswerService:
             self.registry.settings.agent_timeout,
             top_n=self.registry.settings.rerank_top_n,
             max_calls=self.registry.settings.agent_max_calls,
+            on_step=on_step,
         )
         state = workflow.run(
             request.question,

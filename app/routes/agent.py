@@ -4,8 +4,10 @@ from fastapi import APIRouter, Query, Request
 
 from app.core.errors import AppError
 from app.domain.agent import AgentScope, AgentTurnInput, ConnectionInput, ConversationInput
+from app.domain.agent_flow import AgentStep
 from app.domain.projects import ConversationUpdate
 from app.services.key_dialog import open_key_dialog
+from app.services.progress import STEP_LABELS
 
 router = APIRouter()
 
@@ -75,7 +77,37 @@ def rename_conversation(request: Request, identifier: UUID, body: ConversationUp
 
 @router.post("/conversations/{identifier}/turns")
 def conversation_turn(request: Request, identifier: UUID, body: AgentTurnInput) -> dict:
-    return request.app.state.conversations.ask(str(identifier), body)
+    progress = request.app.state.progress
+    request_id = str(body.request_id)
+    progress.start(request_id)
+
+    def on_step(step: AgentStep) -> None:
+        progress.publish(
+            request_id,
+            {
+                "node": step.node,
+                "label": STEP_LABELS.get(step.node, step.node),
+                "detail": step.reason or (f"{step.count} 条" if step.count else ""),
+                "query": step.query,
+                "elapsed_ms": step.elapsed_ms,
+            },
+        )
+
+    try:
+        result = request.app.state.conversations.ask(str(identifier), body, on_step=on_step)
+    except AppError as error:
+        progress.finish(request_id, "failed", error.message)
+        raise
+    except Exception:
+        progress.finish(request_id, "failed", "本轮处理失败，可手动重试。")
+        raise
+    progress.finish(request_id, "done")
+    return result
+
+
+@router.get("/agent/progress/{request_id}")
+def agent_progress(request: Request, request_id: str) -> dict:
+    return request.app.state.progress.snapshot(request_id)
 
 
 @router.post("/agent/scope")

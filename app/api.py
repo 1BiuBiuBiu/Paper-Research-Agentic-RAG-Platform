@@ -36,6 +36,7 @@ from app.services.agent_answer import AgentAnswerService
 from app.services.connection_test import ConnectionTester
 from app.services.conversations import ConversationService
 from app.services.ingestion import IngestionService, Parser
+from app.services.progress import ProgressRegistry
 from app.services.query_adapter import QueryAdapter
 
 
@@ -83,6 +84,7 @@ def create_app(
         web,
     )
     application.state.qa = QueryAdapter(application.state.agent_answers)
+    application.state.progress = ProgressRegistry()
     application.state.conversations = ConversationService(
         ConversationRepository(repository), application.state.agent_answers
     )

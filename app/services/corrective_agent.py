@@ -72,10 +72,12 @@ class CorrectiveAgent:
         timeout: int = 600,
         top_n: int = 5,
         max_calls: int = 7,
+        on_step: Callable[[AgentStep], None] | None = None,
     ) -> None:
         self.provider, self.reranker, self.web = provider, reranker, web
         self.model, self.budget = model, budget
         self.top_n, self.max_calls = top_n, max_calls
+        self.on_step = on_step
         self.started = time.monotonic()
         self.deadline = self.started + timeout
         self.calls = 0
@@ -120,21 +122,19 @@ class CorrectiveAgent:
         self.served_model = completion.served_model
 
     def event(self, state: State, node: str, count: int = 0, reason: str = "") -> dict:
-        return {
-            "trace": state["trace"]
-            + [
-                AgentStep(
-                    node=node,
-                    attempt=state["rewrite_count"],
-                    query=state["query"]
-                    if node in {"retrieve", "rewrite_query", "web_search", "translate_query"}
-                    else "",
-                    count=count,
-                    reason=reason,
-                    elapsed_ms=int((time.monotonic() - self.started) * 1000),
-                )
-            ]
-        }
+        step = AgentStep(
+            node=node,
+            attempt=state["rewrite_count"],
+            query=state["query"]
+            if node in {"retrieve", "rewrite_query", "web_search", "translate_query"}
+            else "",
+            count=count,
+            reason=reason,
+            elapsed_ms=int((time.monotonic() - self.started) * 1000),
+        )
+        if self.on_step is not None:
+            self.on_step(step)
+        return {"trace": state["trace"] + [step]}
 
     def run(
         self,
