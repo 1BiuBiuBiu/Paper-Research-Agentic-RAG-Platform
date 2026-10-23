@@ -210,6 +210,7 @@ class CorrectiveAgent:
         *,
         allow_web: bool,
         chat: bool,
+        enrich: Callable[[list[Evidence]], list[Evidence]] | None = None,
     ) -> State:
         def guard() -> None:
             self.check()
@@ -376,9 +377,16 @@ class CorrectiveAgent:
 
         def generate(s: State) -> dict:
             guard()
+            ledger = s["ledger"]
+            if enrich is not None:
+                try:
+                    # Attach each table/figure's citing paragraph once, for generation only.
+                    ledger = enrich(ledger)
+                except Exception:  # pragma: no cover - assembly must never fail the turn
+                    ledger = s["ledger"]
             numbered = [
                 item.model_copy(update={"source_id": f"E{index + 1}"})
-                for index, item in enumerate(s["ledger"])
+                for index, item in enumerate(ledger)
             ]
             packed, local, web = context(numbered, s["web"], overviews, self.budget)
             if not local and not web and not chat:

@@ -14,6 +14,7 @@ from app.retrieval.reranking import CrossEncoderReranker, Reranker
 from app.retrieval.search import fuse, library_candidates
 from app.services.agent_scope import ScopeResolver
 from app.services.corrective_agent import CorrectiveAgent
+from app.services.evidence_context import attach_references
 from app.services.qa import clip_bytes
 
 
@@ -122,6 +123,11 @@ class AgentAnswerService:
             history,
             allow_web=request.allow_web,
             chat=request.scope.kind == "chat",
+            enrich=lambda evidence: attach_references(
+                evidence,
+                {document.id: document for document in documents},
+                {manifest.document_id: manifest for manifest in manifests},
+            ),
         )
         validate()
         completion = state["completion"]
