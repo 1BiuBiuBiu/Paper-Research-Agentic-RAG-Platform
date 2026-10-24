@@ -86,6 +86,31 @@ Citation Precision 汇总全部引用（micro），无引用返回 null；Scope 
 最终检索结果取最后一轮 LLM 过滤后序列，另保留第一轮过滤前 Top5，不能混用。
 数据协议中金标准穷尽与人工二审尚未完成；本轮模型辅助审校只作试评估，不能称为人工终审。
 
+## 数据集离线复测（免费，无 LLM）
+
+`evaluation/replay_dataset.py` 按金标准目录重放真实本地链路：Docling（仅缺缓存时）→
+BGE-M3 + BM25 → RRF 60 条 → Cross-Encoder 窗口。不调用 LLM、不联网、不计费；
+金标准打分与 benchmark 装配在同目录的 `evaluation/replay_scoring.py`（纯函数，无模型无 IO）。
+
+```powershell
+uv run python -m evaluation.replay_dataset --dataset evaluation/datasets/v0.3 `
+  --out output/evaluation/dataset-v0.3-0.13.8 `
+  --cache output/evaluation/pilot-2026-10-23 --cache output/evaluation/expanded-v0.3-0.11.2
+```
+
+- PDF 依次在 `<dataset>/<文件名>` 与 `~/Downloads/<文件名>` 查找，浏览器重复下载的 `(1)` 后缀
+  会去掉后重试；SHA256 与 `dataset_summary.json` 不一致立即失败，页数不符也失败。
+- `--cache` 以文件名主干复用以前的 `result.json`，来源与 SHA256 写入 `manifest.json`；
+  没有缓存才用 Docling 解析并把结果保存到输出目录。
+- `--window`（默认 20）只是重放窗口；生产交付窗口仍是 `RESEARCH_RERANK_TOP_N`（当前 10），
+  `benchmark.json` 用该窗口打分，逐题 @5/@10/@20 与原问句名次见 `coverage.json`。
+- 输出：`manifest.json`、`predicted_headings.json`、`heading_report.json`、`coverage.json`、
+  `coverage_summary.json`、`benchmark.json`、`metrics.json`。
+- 协议：所有可答题 `direct_evidence_exhaustive=false`，因此 `evidence_complete=false`，
+  报告只能给 **Hit@k**，`recall_at_k` 保持 null；回答与引用指标在授权的付费运行前留空。
+- 精排用原问句；生产路径先在精排前把中文问题英译，所以中文题的离线命中率低于生产路径。
+- 结果目录必须不存在，脚本拒绝覆盖已有运行。
+
 ## 回答审校口径（2026-10-23 勘误）
 
 按问题实际要求判定语义完整性，接受等价表达。required_answer_components需区分必需事实与参考答案的补充解释；不能逐字匹配。

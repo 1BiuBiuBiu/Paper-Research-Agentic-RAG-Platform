@@ -2,6 +2,17 @@
 
 每个已验证切片记录问题、变更、验证和本地 Git 提交；提交只含本次范围。运行论文、密钥、备份和截图不进入 Git，未经指示不推送远程。
 
+## 评估切片 · 数据集 v0.3 离线复测 · 2026-10-24（应用保持 0.13.8）
+
+- 用户新增数据集 `evaluation/datasets/v0.3`：10 篇、176 页、454 条标题候选（345 正例 / 109 负例 / 4 待复核）、51 题（44 可答 / 7 不可答），比 v0.2 新增 Attention、GPT-1、BLIP-2 三篇 18 题；原 7 篇 140 页与 33 题不变。数据集被 `.gitignore` 排除，只以报告记录口径。
+- 新增 `evaluation/replay_dataset.py`（打分与 benchmark 装配在 `evaluation/replay_scoring.py`）：一个命令完成“PDF SHA256 核验 → 复用/执行本地 Docling 解析 → 建库级索引 → RRF 60 → Cross-Encoder 窗口 → 自动打分”，输出 `manifest/predicted_headings/heading_report/coverage/coverage_summary/benchmark/metrics`。**0 次付费调用、0 次联网**；缺缓存才解析，缓存来源与 SHA256 写入 manifest；输出目录必须不存在。
+- 标题结果（排除 4 条待复核）：Micro F1 **94.48%**、Macro F1 **94.57%**、Level Accuracy **100%（325/325）**，TP/FP/FN = 325/21/17；新增 3 篇 Micro **97.30%** / Macro **97.71%**；原 7 篇 **271/19/16** 与 S3.7.3 逐项相同。16 条漏检仍是 WisdoM 行内三级标题（已知解析限制，未改算法）。
+- 检索结果（44 题 / 81 条直接金标准 / chunks v5 / 2,985 chunks）：融合池 **81/81（100%）**、44/44 题金标准全覆盖；精排窗口 Hit@5 **68.18%**、Hit@10 **75.00%**、Hit@20 **86.36%**，金标准覆盖 @10 44/81，nDCG@5 **0.5263** / @10 **0.5431** / @20 **0.6195**。
+- 归因：6 道题金标准在池内名次 1–11 却未进精排 top 20；对它们定向英译诊断 6/6 命中第 1（只诊断、不计指标）。同批 25 题中 22 道有金标准，本轮中文问句 Hit@10 **16/22**（金标准 24/41），0.13.7 已记录英译重放为 22/22（nDCG@10 0.8010）。因此差异在**精排查询语言**，不在融合池或切分版本。
+- 口径：全部可答题 `direct_evidence_exhaustive=false`，按协议只报 **Hit@k**，`recall_at_k` 保持 null；回答/引用/越界指标为 null（无授权付费运行）。金标准匹配为同篇+同页+数值/前三个长词的自动匹配，属助手单次复核，非双人盲审。
+- 检查：**288 passed / 4 skipped**（新增 `tests/test_dataset_replay.py` 6 项）；ruff、格式、mypy（98 源文件）、compileall、`uv lock --check`、`uv pip check` 通过。应用代码、依赖、schema、`CHUNK_VERSION` 均未变，版本仍 0.13.8；未重启本机页面。
+- 环境备注：建索引时沙箱拒绝 BGE 临时目录的 `chmod`/清理，切到更宽文件权限后完成一次运行；3 篇新论文的 Docling 解析在其中断那次运行中已完成并按 SHA256 复用。详见 [数据集 v0.3 离线复测](references/S3.10数据集v0.3离线复测.md)。
+
 ## 0.13.8 · 文档：README 重构为展示型首页 · 2026-10-24
 
 - 按用户要求参照上游 [Enterprise-Agentic-RAG-Platform](https://github.com/ara-5/Enterprise-Agentic-RAG-Platform) 的 README 版式重写根 README：徽章 / 目录 / 项目简介 / 架构图 / 技术栈 / 评估结果 / 项目结构 / 快速开始 / API 参考 / 部署与 CI / 路线图 / 文档索引 / 来源与致谢。
