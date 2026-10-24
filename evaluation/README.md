@@ -46,9 +46,8 @@ rank 必须连续从 1 开始，最多 5；source_id 不重复；匹配金标准
 不依赖字符串相等或系统引用 ID，相同证据被多个块命中只计一次。
 `matched_gold_ids` 为该块实际覆盖的金标准 ID，未命中填 []；相关性必须人工填 0/1/2。
 
-evidence_complete=true 才进入 Recall@k（命中直接证据数 / 全部直接证据数）；
-false 只进入 Hit@k（至少命中一条直接证据）。分别报告问题数，不能混合成 Recall。
-必须有直接证据才能进入上述分母；无答案题单列数量，并进入最终回答评估。
+金标准按完整处理（用户决定，2026-10-24），检索统一报 Recall@k（命中直接证据数 / 全部直接证据数）；
+`evidence_complete` 只作记录，不再阻断 Recall。无答案题单列数量并进入最终回答评估。
 
 ideal_relevances 是完整人工相关性池的评分列表，至少包含所有金标准及本轮结果的相关证据；
 同一证据单元去重。nDCG 使用 gain=2^relevance-1、log2(rank+1)，IDCG 从该池降序取 5。
@@ -82,34 +81,39 @@ Citation Precision 汇总全部引用（micro），无引用返回 null；Scope 
 `uv run python -m evaluation.collect_answers` **仅在允许发送论文片段和计费 API 调用后运行**，
 本轮已由用户显式授权；只用 DeepSeek Flash，联网强制关闭，最多 8 题，每题沿用生产流程的调用边界。
 该脚本保存每题结果，重跑跳过已有记录（包括失败），不自动重复计费。
-结果固定保存在 `output/evaluation/pilot-2026-10-23/`，不混入数据库和论文库。
+旧 pilot 结果保存在 `output/evaluation/pilot-2026-10-23/`，不混入数据库和论文库；
+该脚本现已参数化（`--dataset/--out/--runtime`），现行评估用下一节的命令。
 最终检索结果取最后一轮 LLM 过滤后序列，另保留第一轮过滤前 Top5，不能混用。
 数据协议中金标准穷尽与人工二审尚未完成；本轮模型辅助审校只作试评估，不能称为人工终审。
 
-## 数据集离线复测（免费，无 LLM）
+## 生产链路评估（打分口径）
 
-`evaluation/replay_dataset.py` 按金标准目录重放真实本地链路：Docling（仅缺缓存时）→
-BGE-M3 + BM25 → RRF 60 条 → Cross-Encoder 窗口。不调用 LLM、不联网、不计费；
-金标准打分与 benchmark 装配在同目录的 `evaluation/replay_scoring.py`（纯函数，无模型无 IO）。
+**跑评估就是跑生产链路**：真实解析与索引、中文问题英译、Cross-Encoder 精排、DeepSeek 判分与生成，
+然后由 `evaluation/score_production.py` 用交付账本算 Recall@k / nDCG@k，并汇总回答与引用。
+离线回放只用于定位问题，不作为成绩，也不写进 README。
 
 ```powershell
-uv run python -m evaluation.replay_dataset --dataset evaluation/datasets/v0.3 `
-  --out output/evaluation/dataset-v0.3-0.13.8 `
-  --cache output/evaluation/pilot-2026-10-23 --cache output/evaluation/expanded-v0.3-0.11.2
+uv run python -m evaluation.collect_answers `
+  --dataset evaluation/datasets/v0.3 `
+  --out output/evaluation/production-v0.3-0.13.8 `
+  --runtime output/evaluation/dataset-v0.3-0.13.8/runtime
+
+uv run python -m evaluation.score_production `
+  --dataset evaluation/datasets/v0.3 `
+  --run output/evaluation/production-v0.3-0.13.8 `
+  --runtime output/evaluation/dataset-v0.3-0.13.8/runtime `
+  --k 10 --review output/evaluation/production-v0.3-0.13.8/review.md
 ```
 
-- PDF 依次在 `<dataset>/<文件名>` 与 `~/Downloads/<文件名>` 查找，浏览器重复下载的 `(1)` 后缀
-  会去掉后重试；SHA256 与 `dataset_summary.json` 不一致立即失败，页数不符也失败。
-- `--cache` 以文件名主干复用以前的 `result.json`，来源与 SHA256 写入 `manifest.json`；
-  没有缓存才用 Docling 解析并把结果保存到输出目录。
-- `--window`（默认 20）只是重放窗口；生产交付窗口仍是 `RESEARCH_RERANK_TOP_N`（当前 10），
-  `benchmark.json` 用该窗口打分，逐题 @5/@10/@20 与原问句名次见 `coverage.json`。
-- 输出：`manifest.json`、`predicted_headings.json`、`heading_report.json`、`coverage.json`、
-  `coverage_summary.json`、`benchmark.json`、`metrics.json`。
-- 协议：所有可答题 `direct_evidence_exhaustive=false`，因此 `evidence_complete=false`，
-  报告只能给 **Hit@k**，`recall_at_k` 保持 null；回答与引用指标在授权的付费运行前留空。
-- 精排用原问句；生产路径先在精排前把中文问题英译，所以中文题的离线命中率低于生产路径。
-- 结果目录必须不存在，脚本拒绝覆盖已有运行。
+- `collect_answers.py`：逐题运行 CorrectiveAgent，联网强制关闭；结果边跑边写，
+  重跑跳过已记录题目（含失败），不自动重复计费。`manifest.json` 记录模型、调用数、token 与数据集 SHA256。
+- 交付窗口是 `RESEARCH_RERANK_TOP_N`（当前 10）：账本前缀就是判分与生成看到的顺序。
+- `score_production.py`：`--review` 先产出人工复核表；把逐题判定写进 `judgments.json`
+  （`answer_correct` / `required_components_complete` / `citations{编号: bool}` /
+  `scope_leakage` / `correct_abstention`）后重跑，才生成 `benchmark.json`、`retrieval_details.json`、
+  `heading_report.json` 与 `metrics.json`。评分器不替人做判定。
+- 金标准按完整处理（用户决定，2026-10-24），检索指标发布 **Recall@k** 与 **nDCG@k**（k=10，另给 @5 对照）。
+- 标题来自同一批 runtime 解析结果（确定性阶段，无 LLM）。
 
 ## 回答审校口径（2026-10-23 勘误）
 

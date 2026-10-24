@@ -9,5 +9,6 @@
 - 图库区分研究图表、装饰和待核对图像；展示原文图号，内部 fN 只作资产 ID。不静默删除无图注图片。
 - 维持已确认技术栈和模块边界；应用文件目标上限 400 行。不要借修复整体迁移或升级依赖。
 - 默认检查：ruff check、ruff format --check、mypy、pytest、compileall、uv pip check、uv lock --check；模型相关变更按需开启 RUN_DOCLING_TESTS / RUN_EMBEDDING_TESTS。实际 UI 变更另做页面核对，明确未运行项目。
+- **跑评估 = 跑生产链路**：用户要求评估时，必须走真实解析 / 索引 / 英译 / 精排 / 付费 LLM 的端到端运行（`evaluation/collect_answers.py`），报告 Recall@k、回答成功率与引用准确率。离线回放只用于定位问题，不得当作成绩、不得写进 README。
 - API Key 仅在服务端读取，不能写入浏览器、仓库或日志；未经授权不调用付费服务或发送用户论文到第三方。
 - 报错以复现和证据驱动；两次无新增证据 / 改善后停止盲改，说明诊断下一步。

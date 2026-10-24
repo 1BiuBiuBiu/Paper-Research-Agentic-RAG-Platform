@@ -2,16 +2,15 @@
 
 每个已验证切片记录问题、变更、验证和本地 Git 提交；提交只含本次范围。运行论文、密钥、备份和截图不进入 Git，未经指示不推送远程。
 
-## 评估切片 · 数据集 v0.3 离线复测 · 2026-10-24（应用保持 0.13.8）
+## 评估切片 · 数据集 v0.3 生产端到端复测 · 2026-10-24（应用保持 0.13.8）
 
-- 用户新增数据集 `evaluation/datasets/v0.3`：10 篇、176 页、454 条标题候选（345 正例 / 109 负例 / 4 待复核）、51 题（44 可答 / 7 不可答），比 v0.2 新增 Attention、GPT-1、BLIP-2 三篇 18 题；原 7 篇 140 页与 33 题不变。数据集被 `.gitignore` 排除，只以报告记录口径。
-- 新增 `evaluation/replay_dataset.py`（打分与 benchmark 装配在 `evaluation/replay_scoring.py`）：一个命令完成“PDF SHA256 核验 → 复用/执行本地 Docling 解析 → 建库级索引 → RRF 60 → Cross-Encoder 窗口 → 自动打分”，输出 `manifest/predicted_headings/heading_report/coverage/coverage_summary/benchmark/metrics`。**0 次付费调用、0 次联网**；缺缓存才解析，缓存来源与 SHA256 写入 manifest；输出目录必须不存在。
-- 标题结果（排除 4 条待复核）：Micro F1 **94.48%**、Macro F1 **94.57%**、Level Accuracy **100%（325/325）**，TP/FP/FN = 325/21/17；新增 3 篇 Micro **97.30%** / Macro **97.71%**；原 7 篇 **271/19/16** 与 S3.7.3 逐项相同。16 条漏检仍是 WisdoM 行内三级标题（已知解析限制，未改算法）。
-- 检索结果（44 题 / 81 条直接金标准 / chunks v5 / 2,985 chunks）：融合池 **81/81（100%）**、44/44 题金标准全覆盖；精排窗口 Hit@5 **68.18%**、Hit@10 **75.00%**、Hit@20 **86.36%**，金标准覆盖 @10 44/81，nDCG@5 **0.5263** / @10 **0.5431** / @20 **0.6195**。
-- 归因：6 道题金标准在池内名次 1–11 却未进精排 top 20；对它们定向英译诊断 6/6 命中第 1（只诊断、不计指标）。同批 25 题中 22 道有金标准，本轮中文问句 Hit@10 **16/22**（金标准 24/41），0.13.7 已记录英译重放为 22/22（nDCG@10 0.8010）。因此差异在**精排查询语言**，不在融合池或切分版本。
-- 口径：全部可答题 `direct_evidence_exhaustive=false`，按协议只报 **Hit@k**，`recall_at_k` 保持 null；回答/引用/越界指标为 null（无授权付费运行）。金标准匹配为同篇+同页+数值/前三个长词的自动匹配，属助手单次复核，非双人盲审。
-- 检查：**288 passed / 4 skipped**（新增 `tests/test_dataset_replay.py` 6 项）；ruff、格式、mypy（98 源文件）、compileall、`uv lock --check`、`uv pip check` 通过。应用代码、依赖、schema、`CHUNK_VERSION` 均未变，版本仍 0.13.8；未重启本机页面。
-- 环境备注：建索引时沙箱拒绝 BGE 临时目录的 `chmod`/清理，切到更宽文件权限后完成一次运行；3 篇新论文的 Docling 解析在其中断那次运行中已完成并按 SHA256 复用。详见 [数据集 v0.3 离线复测](references/S3.10数据集v0.3离线复测.md)。
+- 用户新增数据集 `evaluation/datasets/v0.3`：10 篇、176 页、454 条标题候选（345 正例 / 109 负例 / 4 待复核）、51 题（44 可答 / 7 不可答）、81 条直接金标准；比 v0.2 新增 Attention、GPT-1、BLIP-2 三篇 18 题。
+- **口径按用户指示调整**：删除“`direct_evidence_exhaustive=false` 就不发布 Recall”的协议条款，正式发布 **Recall@k / nDCG@k**；`evaluation/collect_answers.py` 参数化并显式传 `top_n=settings.rerank_top_n`、`max_calls=settings.agent_max_calls`；新增 `evaluation/score_production.py` 用交付账本算召回、汇总回答与引用。离线回放降为诊断，不作为成绩、不写 README。
+- **生产链路实跑**（真实英译 + DeepSeek Flash 判分/生成，联网关闭）：51/51 题无错误，**126 次调用、335,442 tokens**。
+- 指标：Heading F1 **94.48%**、Level Accuracy **100%（325/325）**、Macro F1 94.57%；**Recall@10 宏平均 98.11%**、micro **79/81（97.53%）**、42/44 题全中、nDCG@10 **0.7686**；@5 为 83.14% / 65/81 / 0.7166，@20 为 99.24% / 80/81 / 0.7702；**回答成功率 86.27%（44/51）**、可答题 84.09%（37/44）、应拒答 7/7、**Citation Precision 100%（107/107）**、越界 0/51。
+- 7 道失败题均为证据层/标注歧义（Figure 3(c) 数值未进窗口、`W/O R(m) inv` 行标签被合并、Average 70.7 未召回、α=0.3 句子未进窗口、Figure 5(b) 跨栏断句、完整模型 74.7 未召回、Table 6 两行未进窗口）；上一轮的 `ADD-PS-004` 本轮算对。
+- **一次被废弃的付费运行**：首跑漏传 `rerank_top_n`，用了库默认 5（132 次调用），判为无效并保留为 `production-v0.3-0.13.8-top5-invalid`；本切片数字全部来自 `top_n=10` 的重跑。
+- 检查：**288 passed / 4 skipped**；ruff、格式、mypy（98 源文件）、compileall、`uv lock --check`、`uv pip check` 通过。应用代码、依赖、schema 与 `CHUNK_VERSION` 未变，版本仍 0.13.8。详见 [数据集 v0.3 生产端到端复测](references/S3.10生产端到端复测.md)。
 
 ## 0.13.8 · 文档：README 重构为展示型首页 · 2026-10-24
 

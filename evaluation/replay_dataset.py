@@ -1,8 +1,10 @@
-"""Free, local-only replay of a labelled dataset: parse, index, rerank, score.
+"""DIAGNOSTIC ONLY: local replay of parse/index/rerank, never a reported score.
 
 Only local models run here: Docling for PDFs without a cached parse, BGE-M3 for vectors, the
 BM25 statistics and the Cross-Encoder. No LLM provider, web search or paid service is called, so
-answer and citation metrics stay empty in the benchmark until a separate paid run is authorised.
+answer and citation metrics stay empty. Reported evaluation numbers must come from the production
+pipeline (`evaluation/collect_answers.py` + `evaluation/score_production.py`); this entry exists
+to isolate retrieval problems (which chunk ranks where), not to publish results.
 
 Usage:
     uv run python -m evaluation.replay_dataset \
