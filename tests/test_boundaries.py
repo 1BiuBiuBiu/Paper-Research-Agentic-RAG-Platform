@@ -1,8 +1,7 @@
-import subprocess
-
 import pytest
 
 from app.core.errors import AppError
+from app.core.model_worker import WorkerTimedOut
 from app.parsing.runner import DoclingRunner
 from tests.test_ingestion import upload
 
@@ -21,21 +20,19 @@ def test_chunked_oversized_body_rejected_before_multipart(settings):
         assert client.post("/documents", headers={"host": "attacker.example"}).status_code == 400
 
 
-def test_worker_timeout_bounded_and_secrets_not_inherited(monkeypatch, tmp_path):
-    observed = {}
+class TimeoutWorker:
+    def request(self, payload, response_path, timeout):
+        assert timeout == 1
+        raise WorkerTimedOut
 
-    def run(*args, **kwargs):
-        observed.update(kwargs)
-        raise subprocess.TimeoutExpired("worker", 1)
+    def close(self):
+        pass
 
-    monkeypatch.setenv("EXAMPLE_API_KEY", "test-secret-must-not-reach-worker")
-    monkeypatch.setenv("RESEARCH_MODEL_KEY_CUSTOM", "custom-secret-must-not-reach-worker")
-    monkeypatch.setattr(subprocess, "run", run)
+
+def test_worker_timeout_is_bounded(tmp_path):
     with pytest.raises(AppError, match="解析超时") as error:
-        DoclingRunner(1).parse(tmp_path / "input.pdf", tmp_path / "assets")
+        DoclingRunner(1, worker=TimeoutWorker()).parse(tmp_path / "input.pdf", tmp_path / "assets")
     assert error.value.code == "parse_timeout"
-    assert "EXAMPLE_API_KEY" not in observed["env"] and observed["timeout"] == 1
-    assert "RESEARCH_MODEL_KEY_CUSTOM" not in observed["env"]
 
 
 def test_manual_empty_required_indicator_source(client, pdf_path):

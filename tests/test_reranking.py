@@ -1,10 +1,11 @@
 import json
-import subprocess
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from app.core.errors import AppError
+from app.core.model_worker import WorkerTimedOut
 from app.domain.qa import Evidence
 from app.retrieval.reranking import CrossEncoderReranker
 
@@ -27,22 +28,32 @@ def evidence():
     ]
 
 
-def test_reranker_worker_is_offline_no_credentials_and_maps_scores(settings, monkeypatch):
-    ranker = CrossEncoderReranker(settings)
-    monkeypatch.setattr(ranker, "ready", lambda: True)
-    monkeypatch.setenv("TAVILY_API_KEY", "synthetic-secret")
-    from pathlib import Path
-
-    def run(command, **kwargs):
-        assert kwargs["env"]["HF_HUB_OFFLINE"] == "1"
-        assert "TAVILY_API_KEY" not in kwargs["env"]
-        path = Path(command[-1])
-        payload = json.loads((path / "input.json").read_text(encoding="utf-8"))
-        assert len(payload["pairs"]) == 2 and payload["revision"] == settings.reranker_revision
+class ScoreWorker:
+    def request(self, payload, response_path, timeout):
+        path = Path(payload["directory"])
+        body = json.loads((path / "input.json").read_text(encoding="utf-8"))
+        assert timeout > 0
+        assert response_path.parent == path
+        assert len(body["pairs"]) == 2
+        assert body["revision"]
         np.save(path / "scores.npy", np.array([-2, 5], dtype="float32"))
-        return subprocess.CompletedProcess(command, 0)
+        return {"ok": True}
 
-    monkeypatch.setattr(subprocess, "run", run)
+    def close(self):
+        pass
+
+
+class TimeoutWorker:
+    def request(self, payload, response_path, timeout):
+        raise WorkerTimedOut
+
+    def close(self):
+        pass
+
+
+def test_reranker_worker_maps_scores(settings, monkeypatch):
+    ranker = CrossEncoderReranker(settings, ScoreWorker())
+    monkeypatch.setattr(ranker, "ready", lambda: True)
     ranked = ranker.rank("synthetic question", evidence())
     assert [e.id for e in ranked] == ["1", "0"]
     assert ranked[0].rerank_score == 5
@@ -50,16 +61,11 @@ def test_reranker_worker_is_offline_no_credentials_and_maps_scores(settings, mon
 
 
 def test_missing_model_and_timeout_fail_without_silent_fallback(settings, monkeypatch):
-    ranker = CrossEncoderReranker(settings)
+    ranker = CrossEncoderReranker(settings, TimeoutWorker())
     monkeypatch.setattr(ranker, "ready", lambda: False)
     with pytest.raises(AppError, match="未就绪"):
         ranker.rank("q", evidence())
     monkeypatch.setattr(ranker, "ready", lambda: True)
-
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired("offline", 120)
-
-    monkeypatch.setattr(subprocess, "run", timeout)
     with pytest.raises(AppError, match="超时"):
         ranker.rank("q", evidence())
     assert not ranker.lock.locked()

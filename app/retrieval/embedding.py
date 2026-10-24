@@ -1,7 +1,4 @@
 import json
-import os
-import subprocess
-import sys
 import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +9,13 @@ from numpy.typing import NDArray
 
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.core.model_worker import (
+    PersistentWorker,
+    WorkerClient,
+    WorkerStopped,
+    WorkerTimedOut,
+    isolated_environment,
+)
 
 
 class Embedder(Protocol):
@@ -22,11 +26,18 @@ class Embedder(Protocol):
 
 
 class BGEEmbedder:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, worker: WorkerClient | None = None) -> None:
         self.settings = settings
         self.model = settings.embedding_model
         self.revision = settings.embedding_revision
         self.lock = threading.Lock()
+        self.worker = worker or PersistentWorker(
+            "app.retrieval.embedding_worker",
+            settings.embedding_idle_seconds,
+            environment=isolated_environment(
+                {"HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
+            ),
+        )
 
     def encode(self, texts: list[str]) -> NDArray[np.float32]:
         if not self.lock.acquire(blocking=False):
@@ -46,28 +57,21 @@ class BGEEmbedder:
                     ),
                     encoding="utf-8",
                 )
-                env = {
-                    k: v
-                    for k, v in os.environ.items()
-                    if not any(
-                        word in k.upper() for word in ("API_KEY", "MODEL_KEY", "SECRET", "TOKEN")
-                    )
-                }
-                env["HF_HUB_OFFLINE"] = "1"
                 try:
-                    result = subprocess.run(
-                        [sys.executable, "-m", "app.retrieval.embedding_worker", temporary],
-                        cwd=Path(__file__).resolve().parents[2],
-                        env=env,
-                        capture_output=True,
-                        timeout=self.settings.index_timeout,
-                        check=False,
+                    result = self.worker.request(
+                        {"directory": temporary},
+                        path / ".worker-response.json",
+                        self.settings.index_timeout,
                     )
-                except subprocess.TimeoutExpired:
+                except WorkerTimedOut:
                     raise AppError(
                         "embedding_timeout", "本地向量计算超时，请缩小文档或重试。", 504
                     ) from None
-                if result.returncode:
+                except WorkerStopped:
+                    raise AppError(
+                        "embedding_unavailable", "本地 BGE-M3 进程异常退出，请检查模型文件。", 503
+                    ) from None
+                if not result.get("ok"):
                     raise AppError(
                         "embedding_unavailable",
                         "本地 BGE-M3 未就绪，请先运行模型下载命令或检查模型文件。",
@@ -83,3 +87,6 @@ class BGEEmbedder:
                 return np.asarray(vectors, dtype="float32")
         finally:
             self.lock.release()
+
+    def close(self) -> None:
+        self.worker.close()

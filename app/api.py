@@ -59,9 +59,19 @@ def create_app(
         # Finish index builds interrupted by a restart; each parsed paper is indexed once.
         if settings.auto_index:
             application.state.indexing.resume_pending()
-        yield
+        try:
+            yield
+        finally:
+            for component in (
+                application.state.ingestion.parser,
+                application.state.indexing.embedder,
+                application.state.agent_answers.reranker,
+            ):
+                close = getattr(component, "close", None)
+                if close is not None:
+                    close()
 
-    application = FastAPI(title="Research Paper RAG", version="0.13.7", lifespan=lifespan)
+    application = FastAPI(title="Research Paper RAG", version="0.13.8", lifespan=lifespan)
     application.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
@@ -81,7 +91,7 @@ def create_app(
     application.state.ingestion = IngestionService(
         settings,
         repository,
-        parser or DoclingRunner(settings.parse_timeout),
+        parser or DoclingRunner(settings.parse_timeout, settings.docling_idle_seconds),
         on_parsed=application.state.indexing.queue_build if settings.auto_index else None,
     )
     application.state.provider = provider or DeepSeekProvider(settings)
@@ -162,7 +172,7 @@ def create_app(
     def health() -> dict:
         return {
             "status": "ok",
-            "version": "0.13.7",
+            "version": "0.13.8",
             "slice": "S3.10",
             "parser": "docling",
             "rag_enabled": True,

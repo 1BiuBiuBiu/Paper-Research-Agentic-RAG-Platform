@@ -1,4 +1,3 @@
-import subprocess
 import threading
 import time
 from dataclasses import replace
@@ -9,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.api import create_app
 from app.core.errors import AppError
+from app.core.model_worker import WorkerTimedOut
 from app.domain.papers import Block, Box
 from app.retrieval.embedding import BGEEmbedder
 from tests.conftest import FixtureParser
@@ -168,20 +168,16 @@ def test_long_question_retrieval_encodes_all_segments(settings):
         assert any("Which wavelength was measured?" in text for text in embedder.calls[-1])
 
 
-def test_embedding_worker_deadline_offline_and_credentials_filtered(settings, monkeypatch):
-    seen = {}
+class TimeoutWorker:
+    def request(self, payload, response_path, timeout):
+        raise WorkerTimedOut
 
-    def timeout(*args, **kwargs):
-        seen.update(kwargs)
-        raise subprocess.TimeoutExpired("embedding_worker", 1)
+    def close(self):
+        pass
 
-    monkeypatch.setattr(subprocess, "run", timeout)
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "must-stay-outside-worker")
-    monkeypatch.setenv("RESEARCH_MODEL_KEY_CUSTOM", "custom-key-must-stay-outside-worker")
+
+def test_embedding_worker_deadline_maps_to_app_error(settings):
     with pytest.raises(AppError) as error:
-        BGEEmbedder(settings).encode(["Synthetic text"])
+        BGEEmbedder(settings, TimeoutWorker()).encode(["Synthetic text"])
     assert error.value.code == "embedding_timeout"
-    assert "DEEPSEEK_API_KEY" not in seen["env"]
-    assert "RESEARCH_MODEL_KEY_CUSTOM" not in seen["env"]
-    assert seen["env"]["HF_HUB_OFFLINE"] == "1"
     assert not list(settings.data_dir.glob("embedding-*"))

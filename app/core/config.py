@@ -11,6 +11,7 @@ class Settings:
     max_upload_bytes: int = 50 * 1024 * 1024
     max_pages: int = 500
     parse_timeout: int = 300
+    docling_idle_seconds: float = 120
     deepseek_api_key: str = field(default="", repr=False)
     deepseek_base_url: str = "https://api.deepseek.com"
     model_timeout: int = 90
@@ -19,11 +20,13 @@ class Settings:
     embedding_model: str = "BAAI/bge-m3"
     embedding_revision: str = "5617a9f61b028005a4858fdac845db406aefb181"
     index_timeout: int = 600
+    embedding_idle_seconds: float = 300
     # A successful parse queues the index build; only an explicit opt-out disables it.
     auto_index: bool = True
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     reranker_revision: str = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
     reranker_timeout: int = 120
+    reranker_idle_seconds: float = 300
     # One library over the selected papers: dense top-k and BM25 top-k, then fusion.
     candidates: int = 60
     rerank_top_n: int = 10
@@ -49,6 +52,7 @@ class Settings:
             max_upload_bytes=int(value("RESEARCH_MAX_UPLOAD_MB", "50")) * 1024 * 1024,
             max_pages=int(value("RESEARCH_MAX_PAGES", "500")),
             parse_timeout=int(value("RESEARCH_PARSE_TIMEOUT", "300")),
+            docling_idle_seconds=float(value("RESEARCH_DOCLING_IDLE_SECONDS", "120")),
             deepseek_api_key=value("DEEPSEEK_API_KEY"),
             deepseek_base_url=value("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             model_timeout=int(value("DEEPSEEK_TIMEOUT", "90")),
@@ -58,9 +62,11 @@ class Settings:
                 "RESEARCH_EMBEDDING_REVISION", "5617a9f61b028005a4858fdac845db406aefb181"
             ),
             index_timeout=int(value("RESEARCH_INDEX_TIMEOUT", "600")),
+            embedding_idle_seconds=float(value("RESEARCH_EMBEDDING_IDLE_SECONDS", "300")),
             auto_index=value("RESEARCH_AUTO_INDEX", "1") not in {"0", "false", "no"},
             candidates=int(value("RESEARCH_CANDIDATES", "60")),
             rerank_top_n=int(value("RESEARCH_RERANK_TOP_N", "10")),
+            reranker_idle_seconds=float(value("RESEARCH_RERANKER_IDLE_SECONDS", "300")),
             agent_max_calls=int(value("RESEARCH_AGENT_MAX_CALLS", "3")),
             index_cache_mb=int(value("RESEARCH_INDEX_CACHE_MB", "300")),
             index_cache_entries=int(value("RESEARCH_INDEX_CACHE_ENTRIES", "8")),

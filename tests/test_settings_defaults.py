@@ -15,4 +15,8 @@ def test_default_funnel_and_call_budget():
 
 
 def test_auto_index_is_on_by_default():
-    assert Settings(data_dir=Path("unused")).auto_index is True
+    settings = Settings(data_dir=Path("unused"))
+    assert settings.auto_index is True
+    assert settings.docling_idle_seconds == 120
+    assert settings.embedding_idle_seconds == 300
+    assert settings.reranker_idle_seconds == 300

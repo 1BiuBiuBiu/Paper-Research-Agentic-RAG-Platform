@@ -1,7 +1,4 @@
 import json
-import os
-import subprocess
-import sys
 import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +8,13 @@ import numpy as np
 
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.core.model_worker import (
+    PersistentWorker,
+    WorkerClient,
+    WorkerStopped,
+    WorkerTimedOut,
+    isolated_environment,
+)
 from app.domain.qa import Evidence
 
 
@@ -19,9 +23,16 @@ class Reranker(Protocol):
 
 
 class CrossEncoderReranker:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, worker: WorkerClient | None = None) -> None:
         self.settings = settings
         self.lock = threading.Lock()
+        self.worker = worker or PersistentWorker(
+            "app.retrieval.reranker_worker",
+            settings.reranker_idle_seconds,
+            environment=isolated_environment(
+                {"HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
+            ),
+        )
 
     def ready(self) -> bool:
         from huggingface_hub import try_to_load_from_cache
@@ -61,26 +72,21 @@ class CrossEncoderReranker:
                     ),
                     encoding="utf-8",
                 )
-                env = {
-                    k: v
-                    for k, v in os.environ.items()
-                    if not any(s in k.upper() for s in ("API_KEY", "MODEL_KEY", "SECRET", "TOKEN"))
-                }
-                env.update(HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
                 try:
-                    result = subprocess.run(
-                        [sys.executable, "-m", "app.retrieval.reranker_worker", temp],
-                        cwd=Path(__file__).resolve().parents[2],
-                        env=env,
-                        capture_output=True,
-                        check=False,
-                        timeout=self.settings.reranker_timeout,
+                    result = self.worker.request(
+                        {"directory": temp},
+                        path / ".worker-response.json",
+                        self.settings.reranker_timeout,
                     )
-                except subprocess.TimeoutExpired:
+                except WorkerTimedOut:
                     raise AppError(
                         "reranker_timeout", "本地精排超时，请缩小范围后重试。", 504
                     ) from None
-                if result.returncode:
+                except WorkerStopped:
+                    raise AppError(
+                        "reranker_unavailable", "本地精排进程异常退出，请检查模型文件。", 503
+                    ) from None
+                if not result.get("ok"):
                     raise AppError(
                         "reranker_unavailable", "本地精排模型加载或计算失败，请检查模型文件。", 503
                     )
@@ -94,3 +100,6 @@ class CrossEncoderReranker:
                 ]
         finally:
             self.lock.release()
+
+    def close(self) -> None:
+        self.worker.close()
