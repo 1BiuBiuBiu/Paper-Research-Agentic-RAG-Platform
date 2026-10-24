@@ -176,8 +176,8 @@ Research-Agentic-RAG-Platform/
 │   └── ui_components/        # 论文库、阅读区、Agent 对话、设置等组件
 │
 ├── evaluation/               # 六项指标评分器、数据集、回放与测量脚本
-├── tests/                    # 282 项自动化测试（真实模型调用显式 opt-in）
-├── scripts/                  # 权重下载、测试夹具、启动器辅助
+├── tests/                    # pytest 测试集：最近全量 282 passed / 4 skipped
+├── scripts/                  # 模型权重下载、测试夹具、平台启动器（ps1）
 ├── references/               # 各切片验收记录与专项方案
 ├── data/                     # 运行数据：原文、解析、页面资产、SQLite（Git 忽略）
 ├── output/                   # 启动器日志与评估产物（Git 忽略）
@@ -229,6 +229,9 @@ uv run python -m scripts.download_embedding
 
 # 精排模型（数十 MB）
 uv run python -m scripts.download_reranker
+
+# 可选：预先下载 Docling TableFormer 表格权重（离线部署时必需）
+uv run python -m scripts.download_tables
 ```
 
 Docling 的版面模型在首次解析时自动下载；断网部署可先 `uv run docling-tools models download`，再把 `DOCLING_ARTIFACTS_PATH` 指向产物目录。
