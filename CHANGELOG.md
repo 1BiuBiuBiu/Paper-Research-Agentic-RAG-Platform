@@ -2,6 +2,12 @@
 
 每个已验证切片记录问题、变更、验证和本地 Git 提交；提交只含本次范围。运行论文、密钥、备份和截图不进入 Git，未经指示不推送远程。
 
+## 0.13.8 · 文档：README 加入产品界面展示 · 2026-10-24
+
+- README 新增论文库与 Agent 问答两张桌面截图，受版本管理的展示资产位于 `docs/images/`；运行期截图仍保持 Git 忽略。
+- 问答图来自用户明确授权的真实 DeepSeek Flash 调用：限定《Attention Is All You Need》单篇，联网关闭，2 次计费调用、4,109 tokens、48.25 秒，引用论文第 7、1、8 页三条证据。
+- 同步 PRD、架构、项目状态与 [README 界面展示验收记录](references/README界面展示验收记录.md)。README 相对链接及 1440×900 图片尺寸核对通过；ruff、格式、mypy（98 源文件）、compileall、`uv pip check`、`uv lock --check` 及 pytest **288 passed / 4 skipped** 通过。应用代码、依赖、schema 与版本号不变。
+
 ## 评估切片 · 数据集 v0.3 生产端到端复测 · 2026-10-24（应用保持 0.13.8）
 
 - 用户新增数据集 `evaluation/datasets/v0.3`：10 篇、176 页、454 条标题候选（345 正例 / 109 负例 / 4 待复核）、51 题（44 可答 / 7 不可答）、81 条直接金标准；比 v0.2 新增 Attention、GPT-1、BLIP-2 三篇 18 题。
